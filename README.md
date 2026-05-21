@@ -191,7 +191,7 @@ If you use MENTAL ONE in your research, please cite:
   author = {Yoon A Limsuwan},
   title = {MENTAL ONE: Full Differentiable Psychiatric \& Neurological Engine},
   year = {2026},
-  url = {https://github.com/YoonALimsuwan/mental-one},
+  url = {https://github.com/YoonALimsuwan/MENTAL-ONE},
   note = {MIT License}
 }
 ```
