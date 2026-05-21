@@ -103,13 +103,17 @@ python mental_one.py intervene -i state.json -o plan.json
 
 🧪 Supported Datasets
 
-Dataset Modalities Loader Class
 MODMA 128‑ch EEG, fMRI, clinical MentalHealthDataset('modma', ...)
+
 HUSM EEG 19‑ch EEG (10‑20), diagnosis MentalHealthDataset('husm', ...)
+
 ABIDE Resting‑state fMRI, phenotypic MentalHealthDataset('abide', ...)
+
 COBRE Resting‑state fMRI, clinical MentalHealthDataset('cobre', ...)
-PRED+CT EEG, clinical Coming soon
-REST‑meta‑MDD EEG (multiple sites) Coming soon
+
+PRED+CT EEG, clinical 
+
+REST‑meta‑MDD EEG (multiple sites) 
 
 Custom loaders can be added by extending MentalHealthDataset.
 
@@ -152,18 +156,28 @@ All third‑party libraries used retain their original licenses, all of which ar
 
 We gratefully acknowledge the following open‑source projects that made MENTAL ONE possible:
 
-Library License
 PyTorch BSD‑style
+
 NumPy BSD‑3‑Clause
+
 SciPy BSD‑3‑Clause
+
 Pandas BSD‑3‑Clause
+
 Matplotlib PSF‑based
+
 Seaborn BSD‑3‑Clause
+
 MNE‑Python BSD‑3‑Clause
+
 Nilearn BSD‑3‑Clause
+
 scikit‑learn BSD‑3‑Clause
+
 NetworkX BSD‑3‑Clause
+
 Biopython Biopython License
+
 Optuna MIT
 
 ---
