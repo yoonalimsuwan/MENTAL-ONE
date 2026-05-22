@@ -219,7 +219,7 @@ For questions, collaborations, or clinical validation studies, please open an is
 “We will heal every mind.” 🧠💖
 
 ```
-
+With Artificial intelligence!!
 ```
 🧠 Neuro‑Semantic Translation Engine: MENTAL ONE + LLM Integration
 
