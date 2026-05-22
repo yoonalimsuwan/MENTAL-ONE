@@ -219,3 +219,142 @@ For questions, collaborations, or clinical validation studies, please open an is
 “We will heal every mind.” 🧠💖
 
 ```
+
+```
+🧠 Neuro‑Semantic Translation Engine: MENTAL ONE + LLM Integration
+
+This section describes how to transform MENTAL ONE (the differentiable psychiatric and neurological engine) into a Neuro‑Latent Encoder and connect it with a frozen large language model (LLM) to decode inner monologue, emotional context, and covert thoughts — a true Multimodal Neuro‑Semantic Integration.
+
+---
+
+1. Why MENTAL ONE as the Encoder?
+
+Raw brain signals (EEG, MEG, fMRI) suffer from extreme noise and high dimensionality, making direct use by an LLM nearly impossible. MENTAL ONE solves this via:
+
+· Semantic State Contraction (SSC) – compresses signals into semantically meaningful attractors.
+· Renormalisation Group (RG) Filtering – removes micro‑scale noise, preserving macro‑scale structure.
+· CSOC Kernel & Ito Process – captures dynamic risk, instability, and trajectory of mental states.
+
+The output is not raw voltage but a Continuous Brain Embedding — a low‑dimensional, stable vector that encodes the brain’s current state, affective tone, and latent semantic intent.
+
+---
+
+2. Phase‑1 Architecture (Frozen LLM + Projection Layer)
+
+For the first experimental phase we recommend a minimal, stable bridge:
+
+```
+[MENTAL ONE]  →  Brain Embedding v ∈ ℝ^{d_b}
+       │
+       ▼
+Projection Layer  (Linear / MLP)  →  v' ∈ ℝ^{d_llm × n_prefix}
+       │
+       ▼
+Reshape → sequence of n_prefix token embeddings
+       │
+       ▼
+Prepend to input tokens  [PREFIX] [Prompt ...]
+       │
+       ▼
+Frozen LLM (e.g. LLaMA, Mistral)  →  Autoregressive generation  →  Inner Monologue
+```
+
+Key design choices:
+
+· Frozen LLM – preserves linguistic prior, prevents catastrophic forgetting, and requires no gradient flow through the large backbone.
+· Projection Layer – a single linear transform (or tiny MLP) that maps the MENTAL ONE embedding into the LLM’s token embedding space. It acts as a soft prompt.
+· n_prefix tokens – typically 4–16 learned “prefix” positions that carry all the brain‑state information.
+
+This setup keeps the trainable parameters extremely small, ensuring fast convergence even with limited brain‑text paired data.
+
+---
+
+3. What Makes the Embeddings Special?
+
+The embeddings produced by MENTAL ONE are not generic neural features. They already encode:
+
+· Affective coordinates (panic, calm, depression, etc.) via the SSC energy landscape.
+· Criticality index from the learnable CSOC kernel, indicating mental instability.
+· Trajectory slope from the RG‑smoothed Ito process, giving context on whether the patient is improving or deteriorating.
+
+Thus, when an LLM sees the prefix, it can distinguish between “I want to leave” spoken from a panic state versus a deep depressive state, enabling context‑aware decoding.
+
+---
+
+4. Quick‑Start Guide (Conceptual)
+
+Step 1: Extract Brain Embedding from MENTAL ONE
+
+```python
+from mental_one import MentalONEEngine
+
+engine = MentalONEEngine()
+report = engine.run(eeg_file="patient.edf")
+
+brain_embedding = report['s_star']          # stabilized state vector
+diagnosis = report['diagnosis']            # optional context
+trajectory = report['future_trajectory']   # optional dynamic info
+```
+
+Step 2: Build Projection Layer & Frozen LLM
+
+```python
+import torch.nn as nn
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+class NeuroPrefixProjector(nn.Module):
+    def __init__(self, brain_dim, llm_dim, n_prefix=8):
+        super().__init__()
+        self.proj = nn.Linear(brain_dim, llm_dim * n_prefix)
+        self.n_prefix = n_prefix
+
+    def forward(self, brain_emb):
+        # brain_emb shape: (batch, brain_dim)
+        projected = self.proj(brain_emb)               # (batch, llm_dim * n_prefix)
+        return projected.view(-1, self.n_prefix, self.llm_dim)
+```
+
+Step 3: Training (Frozen LLM + Projection Only)
+
+· Dataset: pairs of (brain_embedding, text_description_of_thought)
+· Freeze the LLM, train only the projection layer (and optionally a LayerNorm before prepending).
+· Loss: standard causal language modeling loss on the text tokens (the prefix tokens are ignored in the loss).
+
+Step 4: Inference
+
+```python
+# Load model
+llm = AutoModelForCausalLM.from_pretrained(...)
+projector = NeuroPrefixProjector(brain_dim=..., llm_dim=4096)
+# Freeze LLM
+for param in llm.parameters():
+    param.requires_grad = False
+
+# Generate inner monologue
+brain_emb = ...  # from MENTAL ONE
+prefix = projector(brain_emb)                     # (1, n_prefix, 4096)
+input_ids = tokenizer("Think aloud:", return_tensors="pt").input_ids
+input_embeds = llm.get_input_embeddings()(input_ids)
+full_embeds = torch.cat([prefix, input_embeds], dim=1)
+
+output = llm.generate(inputs_embeds=full_embeds, max_new_tokens=100)
+print(tokenizer.decode(output[0]))
+```
+
+---
+
+5. Why Not Cross‑Attention Adapter Yet?
+
+Cross‑attention adapters (like Q‑Former) are more expressive but introduce instability with small datasets and noisy signals. After the Projection Layer baseline proves stable and accurate, we can upgrade to a dynamic adapter that lets the brain state modulate every decoding step — the logical next step toward full neuro‑semantic dialogue.
+
+---
+
+6. Future Roadmap
+
+1. Contrastive Pretraining – align brain embeddings with text embeddings using a CLIP‑like objective to improve zero‑shot decoding.
+2. Dynamic Adapter (Q‑Former / Perceiver) – enable step‑by‑step conditioning for longer, coherent narratives.
+3. Closed‑Loop Intervention – feed the decoded inner monologue back into MENTAL ONE’s intervention designer for real‑time therapeutic feedback.
+
+---
+
+Built on the MENTAL ONE engine by Yoon A Limsuwan. Integration design for the Neuro‑Semantic Translation Engine – Phase 1.
