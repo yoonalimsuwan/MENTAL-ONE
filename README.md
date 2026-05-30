@@ -11,6 +11,8 @@
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19814975-blue)](https://doi.org/10.5281/zenodo.19814975)
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20194882-blue)](https://doi.org/10.5281/zenodo.20194882)
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20330482-blue)](https://doi.org/10.5281/zenodo.20330482)
+[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20458353-blue)](https://doi.org/10.5281/zenodo.20458353)
+
 
 **MENTAL ONE** is an end‑to‑end differentiable engine for psychiatric and neurological diagnosis, trajectory prediction, and treatment design. It unifies **Semantic State Contraction (SSC)**, **Self‑Organised Criticality (SOC)** with a learnable kernel, **Renormalisation Group (RG)** filtering, **Itō processes**, and **control‑theoretic interventions** into a single, vendor‑neutral PyTorch workflow.
 
