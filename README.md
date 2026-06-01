@@ -199,6 +199,7 @@ If you use MENTAL ONE in your research, please cite:
   title = {MENTAL ONE: Full Differentiable Psychiatric \& Neurological Engine},
   year = {2026},
   url = {https://github.com/YoonALimsuwan/MENTAL-ONE},
+DOI = https://doi.org/10.5281/zenodo.20330482 ,
   note = {MIT License}
 }
 ```
