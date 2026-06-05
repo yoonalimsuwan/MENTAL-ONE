@@ -440,3 +440,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ---
 
 *"We will heal every mind."* 🧠💖
+
+## Future Roadmap: End-to-End Differentiability
+
+The current implementation of **PSY ONE BRIDGE** focuses on the formalization of structural psychoanalytic theory, information theory, and psychopathological state-modeling into a verifiable computational architecture. 
+
+To preserve the clarity of the theoretical core and ensure rigorous validation of the underlying mathematical logic, the transition to a **Fully Differentiable** framework is strategically slated for the next phase of development.
+
+### Phase 2 Execution Plan
+Following the scientific peer review and academic recognition of this foundational model, subsequent updates will transform the architecture into a fully differentiable system to support end-to-end backpropagation within large-scale deep learning pipelines (such as the integrated `MENTAL ONE` engine).
+
+Planned implementations for Phase 2 include:
+* **Continuous Relaxations:** Replacing discrete state-switching and hard threshold logic (e.g., categorical psychopathology mode triggers) with continuous approximations like `Sigmoid` or `Gumbel-Softmax` functions to prevent gradient clipping.
+* **Differentiable Entropy Streams:** Refining the Id’s entropy computations and the Superego's regularization constraints to ensure unbroken gradient flows.
+* **Gradient-Based Optimization:** Enabling the Ego's free-energy minimization processes to be optimized directly via standard gradient descent variants.
+
+We welcome academic feedback and collaboration on the current architectural logic as we pave the way toward this fully differentiable optimization framework.
+
