@@ -8,8 +8,11 @@
 [![MENTAL ONE](https://img.shields.io/badge/integrates-MENTAL%20ONE-8A2BE2)](https://github.com/YoonALimsuwan/MENTAL-ONE)
 
 **Developer:** Yoon A Limsuwan / MSPS NETWORK — *MY SOUL MOVE BY POWER OF HOLY SPIRIT*
+
 **ORCID:** [0009-0008-2374-0788](https://orcid.org/0009-0008-2374-0788)
+
 **GitHub:** [github.com/yoonalimsuwan](https://github.com/yoonalimsuwan)
+
 **License:** MIT
 **Year:** 2026
 
