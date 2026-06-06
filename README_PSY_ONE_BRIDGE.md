@@ -268,7 +268,7 @@ print(f"Overall accuracy: {results['__overall__']['mean_accuracy'] * 100:.1f}%")
 
 ```bash
 # Simulate a healthy psyche cycle
-python psy_one_bridge.py simulate --mode healthy --n_cycles 1
+python psy_one_bridge_diff_v2.py simulate --mode healthy --n_cycles 1
 
 # Simulate MDD profile with longitudinal tracking
 python psy_one_bridge_diff_v2.py simulate --mode mdd_anxiety --n_cycles 10 --verbose
