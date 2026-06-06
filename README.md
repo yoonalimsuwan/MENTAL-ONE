@@ -63,8 +63,8 @@ pip install nibabel nilearn
 pip install optuna
 
 # Clone MENTAL ONE
-git clone https://github.com/YoonALimsuwan/mental-one.git
-cd mental-one
+git clone https://github.com/yoonalimsuwan/MENTAL-ONE.git
+cd MENTAL-ONE
 ```
 
 ---
