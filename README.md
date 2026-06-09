@@ -74,13 +74,13 @@ cd MENTAL-ONE
 1. Classify a Single Patient
 
 ```bash
-python mental_one_v2.py classify -i patient.edf -o report.json
+python mental_one.py classify -i patient.edf -o report.json
 ```
 
 2. Train on a Public Dataset (single GPU)
 
 ```bash
-python mental_one_v2.py train \
+python mental_one.py train \
   --dataset modma \
   --data_dir /path/to/MODMA \
   --subject_list sub-001 sub-002 ... \
@@ -104,7 +104,7 @@ torchrun --nproc_per_node=4 mental_one.py train \
 4. Generate a Treatment Plan
 
 ```bash
-python mental_one_v2.py intervene -i state.json -o plan.json
+python mental_one.py intervene -i state.json -o plan.json
 ```
 
 ---
@@ -143,7 +143,7 @@ All steps are fully differentiable – the engine can be fine‑tuned end‑to�
 
 ```
 mental-one/
-├── mental_one_v2.py          # Main engine (this file)
+├── mental_one.py          # Main engine (this file)
 ├── README.md              # You are here
 ├── requirements.txt       # Python dependencies
 ├── examples/              # Example inference scripts
