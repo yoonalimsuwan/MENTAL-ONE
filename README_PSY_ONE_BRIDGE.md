@@ -152,10 +152,10 @@ PSY ONE BRIDGE maps information-theoretic parameters to observable neural biomar
 pip install torch numpy scipy
 
 # Place in your project directory
-cp psy_one_bridge_diff_v2.py your_project/
+cp psy_one_bridge_diff.py your_project/
 
 # For full integration, MENTAL ONE must also be importable
-cp mental_one_v2.py your_project/
+cp mental_one.py your_project/
 ```
 
 **Requirements:**
@@ -268,13 +268,13 @@ print(f"Overall accuracy: {results['__overall__']['mean_accuracy'] * 100:.1f}%")
 
 ```bash
 # Simulate a healthy psyche cycle
-python psy_one_bridge_diff_v2.py simulate --mode healthy --n_cycles 1
+python psy_one_bridge_diff.py simulate --mode healthy --n_cycles 1
 
 # Simulate MDD profile with longitudinal tracking
-python psy_one_bridge_diff_v2.py simulate --mode mdd_anxiety --n_cycles 10 --verbose
+python psy_one_bridge_diff.py simulate --mode mdd_anxiety --n_cycles 10 --verbose
 
 # Run full benchmark
-python psy_one_bridge_diff_v2.py benchmark --action_dim 10 --n_subjects 50
+python psy_one_bridge_diff.py benchmark --action_dim 10 --n_subjects 50
 ```
 
 ---
@@ -369,9 +369,9 @@ Output dataclass returned by every inference cycle.
 
 ```
 psy-one-bridge/
-├── psy_one_bridge_diff_v2.py          # Main engine (this module)
+├── psy_one_bridge_diff.py          # Main engine (this module)
 ├── README_PSY_ONE_BRIDGE.md   # This file
-├── mental_one_v2.py              # MENTAL ONE engine (required for integration)
+├── mental_one.py              # MENTAL ONE engine (required for integration)
 └── examples/
     ├── simulate_healthy.py
     ├── simulate_mdd.py
