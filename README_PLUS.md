@@ -34,7 +34,7 @@ A single inheritance hierarchy connects every adaptive parameter module across a
 ```
 CSOCBase  (one_core_*.py)
 ├── CSOCThermostat         → structural_langevin_*.py   (molecular / neural Langevin)
-├── SOCController          → mental_one.py / real_fold_one.py  (state-space / protein)
+├── SOCController          → mental_one.py / real_fold_one_v2.py  (state-space / protein)
 └── [future subclasses]    → any new physical scale
 ```
 
@@ -201,7 +201,7 @@ Parallel to `one_core_mental.py` but operating at molecular/residue scale (Å, k
 
 ---
 
-### `real_fold_one.py` — Universal Full-Atom Differentiable Refinement Engine
+### `real_fold_one_v2.py` — Universal Full-Atom Differentiable Refinement Engine
 
 End-to-end differentiable protein, RNA, DNA, and nucleic acid refinement. Native autograd via OpenMM-ML + TorchForce.
 
@@ -247,17 +247,17 @@ H = torch.autograd.functional.hessian(...)   # works correctly
 
 **CLI:**
 ```bash
-python real_fold_one.py refine   -i input.pdb -o refined.pdb --steps 200
-python real_fold_one.py refine   -i input.pdb -o refined.pdb --ml-potential mace-mp-0
-python real_fold_one.py origami  --shape design.json --output origami/
-python real_fold_one.py md       -i input.pdb -o traj/ --steps 100000
-python real_fold_one.py validate -i input.pdb --reference ref.pdb
-python real_fold_one.py train    -i pdbs/*.pdb --epochs 50
+python real_fold_one_v2.py refine   -i input.pdb -o refined.pdb --steps 200
+python real_fold_one_v2.py refine   -i input.pdb -o refined.pdb --ml-potential mace-mp-0
+python real_fold_one_v2.py origami  --shape design.json --output origami/
+python real_fold_one_v2.py md       -i input.pdb -o traj/ --steps 100000
+python real_fold_one_v2.py validate -i input.pdb --reference ref.pdb
+python real_fold_one_v2.py train    -i pdbs/*.pdb --epochs 50
 ```
 
 ---
 
-### `real_fold_one_ht.py` — High-Throughput Mutation & Epistasis Scanner
+### `real_fold_one_ht_v2.py` — High-Throughput Mutation & Epistasis Scanner
 
 Ultra-fast scanning of single and double mutations using coarse-grained SOC + residue-type energy model.
 
@@ -276,10 +276,10 @@ Ultra-fast scanning of single and double mutations using coarse-grained SOC + re
 
 **CLI:**
 ```bash
-python real_fold_one_ht.py --pdb 1abc.pdb --scan --output ht_results/
-python real_fold_one_ht.py --pdb 1abc.pdb --mutlist mutations.json
-python real_fold_one_ht.py --pdb 1abc.pdb --epistasis --max_epi 2000
-python real_fold_one_ht.py --pdb 1abc.pdb --single 0:5:ALA
+python real_fold_one_ht_v2.py --pdb 1abc.pdb --scan --output ht_results/
+python real_fold_one_ht_v2.py --pdb 1abc.pdb --mutlist mutations.json
+python real_fold_one_ht_v2.py --pdb 1abc.pdb --epistasis --max_epi 2000
+python real_fold_one_ht_v2.py --pdb 1abc.pdb --single 0:5:ALA
 ```
 
 ---
@@ -368,7 +368,7 @@ The ONE Ecosystem provides a principled computational substrate for exploring tw
 
 Orch OR proposes that consciousness arises from quantum state reduction in tubulin dimers within neuronal microtubules. The relevant computational pathway within the ONE Ecosystem:
 
-- `real_fold_one.py` — simulate tubulin dimer conformation switching (GTP → GDP hydrolysis) with MACE-MP-0 or ANI-2x ML potential at full-atom resolution
+- `real_fold_one_v2.py` — simulate tubulin dimer conformation switching (GTP → GDP hydrolysis) with MACE-MP-0 or ANI-2x ML potential at full-atom resolution
 - `structural_langevin_fold.py` — drive conformational dynamics via BAOAB Langevin with CSOC-adaptive temperature, Structural Itô correction at the GTP-binding interface
 - `langevin_mental_bridge.py` / `mental_one.py` — map tubulin conformational state onto brain-state evolution; the disorder distance σ tracks deviation from a coherent reference configuration
 - `standard_one.py` — the RG flow and scaling operators in `DGLAPEvolution` / `DiffRGRefiner` provide a formal bridge between quantum-field–scale processes and classical conformational dynamics
@@ -473,8 +473,8 @@ ONE Ecosystem
 │   └── langevin_mental_bridge.py   Drop-in MENTAL ONE ↔ Langevin bridge
 │
 ├── REAL FOLD ONE Cluster
-│   ├── real_fold_one.py            Full-atom differentiable refinement engine
-│   ├── real_fold_one_ht.py         High-throughput mutation & epistasis scanner
+│   ├── real_fold_one_v2.py            Full-atom differentiable refinement engine
+│   ├── real_fold_one_ht_v2.py         High-throughput mutation & epistasis scanner
 │   └── structural_langevin_fold.py BAOAB Langevin for molecular dynamics
 │
 └── STANDARD ONE
