@@ -284,7 +284,7 @@ python real_fold_one_ht_v2.py --pdb 1abc.pdb --single 0:5:ALA
 
 ---
 
-### `structural_langevin_fold.py` — BAOAB Langevin for Molecular Dynamics
+### `structural_langevin_fold_v2.py` — BAOAB Langevin for Molecular Dynamics
 
 Fully differentiable BAOAB Langevin integrator for atomic coordinates (N×3). Parallel to `structural_langevin_mental.py` but operating at molecular scale.
 
@@ -369,7 +369,7 @@ The ONE Ecosystem provides a principled computational substrate for exploring tw
 Orch OR proposes that consciousness arises from quantum state reduction in tubulin dimers within neuronal microtubules. The relevant computational pathway within the ONE Ecosystem:
 
 - `real_fold_one_v2.py` — simulate tubulin dimer conformation switching (GTP → GDP hydrolysis) with MACE-MP-0 or ANI-2x ML potential at full-atom resolution
-- `structural_langevin_fold.py` — drive conformational dynamics via BAOAB Langevin with CSOC-adaptive temperature, Structural Itô correction at the GTP-binding interface
+- `structural_langevin_fold_v2.py` — drive conformational dynamics via BAOAB Langevin with CSOC-adaptive temperature, Structural Itô correction at the GTP-binding interface
 - `langevin_mental_bridge.py` / `mental_one.py` — map tubulin conformational state onto brain-state evolution; the disorder distance σ tracks deviation from a coherent reference configuration
 - `standard_one.py` — the RG flow and scaling operators in `DGLAPEvolution` / `DiffRGRefiner` provide a formal bridge between quantum-field–scale processes and classical conformational dynamics
 
@@ -475,7 +475,7 @@ ONE Ecosystem
 ├── REAL FOLD ONE Cluster
 │   ├── real_fold_one_v2.py            Full-atom differentiable refinement engine
 │   ├── real_fold_one_ht_v2.py         High-throughput mutation & epistasis scanner
-│   └── structural_langevin_fold.py BAOAB Langevin for molecular dynamics
+│   └── structural_langevin_fold_v2.py BAOAB Langevin for molecular dynamics
 │
 └── STANDARD ONE
     └── standard_one.py             Particle physics, cosmology, unification
