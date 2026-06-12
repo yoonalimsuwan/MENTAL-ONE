@@ -48,7 +48,7 @@ CSOCBase  (one_core_*.py)
 STANDARD ONE                    Fundamental physics, cosmology, particle colliders
         ↕  RG flow / scaling
 REAL FOLD ONE                   Molecular: proteins, nucleic acids, DNA origami
-        ↕  Langevin bridge (structural_langevin_fold.py)
+        ↕  Langevin bridge (structural_langevin_fold_v2.py)
         ↕  BAOAB integrator / Itô correction
 MENTAL ONE                      Neural: EEG/MEG brain-state dynamics, psychiatric modelling
         ↕  PSY ONE BRIDGE DIFF  Differentiable cognition–behaviour interface
