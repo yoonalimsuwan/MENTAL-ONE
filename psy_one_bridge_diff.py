@@ -8,6 +8,17 @@
 # ORCID      : 0009-0008-2374-0788
 # GitHub     : https://github.com/yoonalimsuwan
 #
+# AI Co-Developers (differentiability, DEQ design, bridge architecture):
+#   - Claude   (Anthropic)  — DEQ/Anderson mixing implicit differentiation,
+#                             Gumbel-Softmax straight-through estimator,
+#                             SoftHistoryBuffer gradient-safe design,
+#                             log-space KL stability, EgoModule nn.Parameter
+#                             learnable step-size, CH3D ↔ PSY ONE bridge
+#                             (PsycheCahnHilliardBridge), one_core_mental v2
+#   - GPT      (OpenAI)     — literature cross-check, numerical stability advice
+#   - Gemini   (Google)     — operator scaffolding, initial Id/Ego/Superego design
+#   - DeepSeek              — alternative fixed-point iteration verification
+#
 # Version    : 2.0-DIFF  —  Native Full Differentiable Architecture
 #
 # KEY CHANGES FROM v1.0  (Differentiability Upgrades)
@@ -81,6 +92,7 @@ from one_core_mental import (
     SemanticStateContraction,   # SSC EMA filter  (Paper 4)
     DifferentiableRG,           # learnable RG smoother
     DifferentiableSOC,          # differentiable SOC dynamics
+    CahnHilliardMentalBridge,   # CH3D ↔ MENTAL ONE cross-ecosystem bridge
     soft_clamp,                 # differentiable clamp
     MENTAL_VERSION,
 )
@@ -1373,13 +1385,121 @@ class PSYONEBridge(nn.Module):
 
 
 # =============================================================================
-# 7.  Longitudinal Tracker  —  Temporal Psyche Evolution (unchanged API)
+# 7.  PsycheCahnHilliardBridge — CH3D Phase Field ↔ PSY ONE Bridge
+# =============================================================================
+
+class PsycheCahnHilliardBridge(nn.Module):
+    """
+    Differentiable coupling between the Structural Cahn–Hilliard 3D solver
+    and the PSYONEBridge (Id–Ego–Superego triad).
+
+    Physical interpretation
+    ───────────────────────
+    The CH order parameter u(x,t) encodes spatial neurochemical distributions
+    (e.g., dopamine/serotonin gradients across cortical layers).  The phase
+    separation dynamics (spinodal decomposition) model the onset of
+    psychopathological episodes.  The PSY ONE triad then processes the
+    resulting brain-state vector through the Id–Ego–Superego cycle.
+
+    Data flow (fully differentiable)
+    ─────────────────────────────────
+        u (Nx, Ny, Nz)
+            │
+            ▼ CahnHilliardMentalBridge.ch_to_brain_state()
+        sensory_state (action_dim,)
+            │
+            ▼ PSYONEBridge.forward()
+        PsycheTriadState + total_loss
+
+    Joint loss for co-training
+    ──────────────────────────
+        L = total_psy_loss + λ · E_CH[u]
+
+    Args:
+        psyone_bridge  : PSYONEBridge instance.
+        state_dim      : brain-state vector length used by CahnHilliardMentalBridge.
+        coupling_λ     : weight of CH free energy in the joint loss.
+    """
+
+    def __init__(
+        self,
+        psyone_bridge  : "PSYONEBridge",
+        state_dim      : int   = 512,
+        coupling_λ     : float = 0.1,
+    ) -> None:
+        super().__init__()
+        self.bridge       = psyone_bridge
+        self.ch_map       = CahnHilliardMentalBridge(
+            state_dim=state_dim, coupling_strength=coupling_λ
+        )
+
+    def reset(self) -> None:
+        """Reset CH bridge temporal state and PSY ONE triad state."""
+        self.ch_map.reset()
+        self.bridge.reset()
+
+    def forward(
+        self,
+        u                  : torch.Tensor,
+        emotional_salience : Optional[torch.Tensor] = None,
+        ch_energy          : Optional[torch.Tensor] = None,
+        ch_dt              : float = 1.0,
+    ) -> Tuple["PsycheTriadState", torch.Tensor]:
+        """
+        Combined CH3D → PSY ONE forward pass.
+
+        Args:
+            u                  : (Nx, Ny, Nz) CH order parameter.
+            emotional_salience : optional (action_dim,) salience vector.
+            ch_energy          : optional CH structural free energy scalar.
+            ch_dt              : CH time step for stress rate estimation.
+        Returns:
+            state      : PsycheTriadState from PSY ONE triad.
+            total_loss : joint loss (psy_loss + λ·E_CH if ch_energy given).
+        """
+        # Map CH field → brain-state sensory input
+        ch_out      = self.ch_map(u, dt=ch_dt)
+        sensory_vec = ch_out["brain_state"]  # (state_dim,)
+
+        # Resize to PSY ONE action_dim if needed
+        if sensory_vec.shape[0] != self.bridge.config.action_dim:
+            sensory_vec = F.adaptive_avg_pool1d(
+                sensory_vec.unsqueeze(0).unsqueeze(0),
+                self.bridge.config.action_dim,
+            ).squeeze()
+
+        # PSY ONE triad forward
+        state, psy_loss = self.bridge.forward(sensory_vec, emotional_salience)
+
+        # Joint loss
+        if ch_energy is not None:
+            total_loss = self.ch_map.energy_coupling(ch_energy, psy_loss)
+        else:
+            total_loss = psy_loss
+
+        return state, total_loss
+
+    def run_inference(
+        self,
+        u                  : torch.Tensor,
+        emotional_salience : Optional[torch.Tensor] = None,
+    ) -> "PsycheTriadState":
+        """Inference-mode wrapper (no gradient)."""
+        self.eval()
+        with torch.no_grad():
+            state, _ = self.forward(u, emotional_salience)
+        return state
+
+
+# =============================================================================
+# 8.  Longitudinal Tracker  —  Temporal Psyche Evolution (unchanged API)
 # =============================================================================
 
 class LongitudinalPsycheTracker:
     """
     Tracks psyche state evolution across multiple time points / sessions.
     API unchanged from v1.0; works with differentiable bridge transparently.
+    (Section formerly §7, renumbered §8 after PsycheCahnHilliardBridge insertion.)
     """
 
     def __init__(self, bridge: PSYONEBridge) -> None:
