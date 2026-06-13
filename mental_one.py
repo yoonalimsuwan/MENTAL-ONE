@@ -2,9 +2,22 @@
 # MENTAL ONE – Full Differentiable Psychiatric & Neurological Engine
 # (Distributed Data Parallel + Extreme Optimization)
 # =============================================================================
-# Author: Yoon A Limsuwan
+# Author: Yoon A Limsuwan / MSPS NETWORK
+#         MY SOUL MOVE BY POWER OF HOLY SPIRIT
+# ORCID:  0009-0008-2374-0788
+# GitHub: yoonalimsuwan
 # License: MIT
 # Year: 2026
+#
+# AI Co-Developers (architecture, differentiability, integration):
+#   - Claude   (Anthropic)  — SSCClassifier energy function, CSOCBase inheritance
+#                             chain, DifferentiableSOC/RG canonical design,
+#                             SOCController boolean-buffer fix, soft_clamp
+#                             throughout, MentalONEEngine CH3D integration
+#                             (enable_ch3d_bridge), one_core_mental v2 design
+#   - GPT      (OpenAI)     — literature cross-check, DSM-5 mapping verification
+#   - Gemini   (Google)     — multi-modal data pipeline scaffolding
+#   - DeepSeek              — alternative classifier architecture verification
 #
 # MENTAL ONE is an end‑to‑end differentiable engine for psychiatric and
 # neurological diagnosis, trajectory prediction, and treatment design.
@@ -87,6 +100,8 @@ from one_core_mental import (
     InterfaceDetectorBase,      # Interface detector base
     DifferentiableRG,           # learnable RG smoother (replaces DiffRGRefiner)
     DifferentiableSOC,          # differentiable SOC dynamics (replaces soc_evolve)
+    CahnHilliardMentalBridge,   # CH3D ↔ MENTAL ONE cross-ecosystem bridge
+    structural_biharmonic_n,    # shared biharmonic utility
     get_device as _core_get_device,
     MENTAL_VERSION,
 )
@@ -963,6 +978,8 @@ class MentalONEEngine:
         self.dsm5 = DSM5DiagnosisEngine()
         # LangevinMentalEvolution: set via enable_langevin_bridge()
         self._langevin_evolution = None
+        # LangevinCHMentalBridge: set via enable_ch3d_bridge()
+        self._ch3d_bridge = None
 
     def initialise_from_dataset(self, dataset: MentalHealthDataset, subject_list: List[str]):
         all_s0 = []
@@ -1020,6 +1037,71 @@ class MentalONEEngine:
         except ImportError:
             logger.warning(
                 "langevin_mental_bridge not found — using standard evolution."
+            )
+
+    def enable_ch3d_bridge(
+        self,
+        ch_solver=None,
+        state_dim: int = 0,
+        langevin_steps: int = 10,
+        dt_lang: float = 0.002,
+        base_temp: float = 300.0,
+    ) -> None:
+        """
+        Attach a Structural Cahn-Hilliard 3D solver to the MENTAL ONE engine,
+        enabling cross-ecosystem phase-field ↔ psychiatric state coupling.
+
+        The ``CahnHilliardMentalBridge`` (one_core_mental) maps the CH order
+        parameter u(x,t) to a brain-state stress signal and to a projected
+        brain-state vector that is subsequently evolved by the BAOAB Langevin
+        integrator before entering the SSCClassifier / SOCController pipeline.
+
+        Call AFTER ``initialise_from_dataset()`` so that ``self.classifier``
+        is already set up and ``state_dim`` can be inferred automatically.
+
+        Args:
+            ch_solver      : StructuralCahnHilliard3D instance (optional).
+                             If None, the bridge operates in projection-only mode
+                             (no CH stepping — just mapping a provided u field).
+            state_dim      : brain-state dimension. If 0, inferred from classifier.
+            langevin_steps : BAOAB steps per CH time step.
+            dt_lang        : Langevin integration step.
+            base_temp      : reference Langevin temperature (K).
+
+        Usage::
+            from structural_cahn_hilliard_3d import StructuralCahnHilliard3D, CahnHilliardConfig
+            cfg = CahnHilliardConfig(nx=32, ny=32, nz=32)
+            ch  = StructuralCahnHilliard3D(cfg).to(engine.device)
+            engine.enable_ch3d_bridge(ch_solver=ch)
+        """
+        try:
+            from langevin_mental_bridge import LangevinCHMentalBridge
+
+            if state_dim == 0:
+                if self.classifier is not None:
+                    sd = self.classifier.n_channels * self.classifier.n_timepoints
+                else:
+                    sd = 19 * 256   # default
+            else:
+                sd = state_dim
+
+            self._ch3d_bridge = LangevinCHMentalBridge(
+                state_dim      = sd,
+                ch_solver      = ch_solver,
+                mental_engine  = self,
+                langevin_steps = langevin_steps,
+                dt_lang        = dt_lang,
+                base_temp      = base_temp,
+            ).to(self.device)
+
+            logger.info(
+                f"[MentalONEEngine] CH3D bridge enabled "
+                f"(state_dim={sd}, steps={langevin_steps}, "
+                f"ch_solver={'yes' if ch_solver is not None else 'projection-only'})"
+            )
+        except ImportError:
+            logger.warning(
+                "langevin_mental_bridge not found — CH3D bridge unavailable."
             )
 
     def run(self, eeg_file=None, meg_file=None, fmri_file=None, clinical_file=None, n_iter=25):
