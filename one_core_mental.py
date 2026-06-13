@@ -2,16 +2,27 @@
 # ONE CORE MENTAL — Shared Foundation for the MENTAL ONE Ecosystem
 # =============================================================================
 # Developer : Yoon A Limsuwan / MSPS NETWORK
+#             MY SOUL MOVE BY POWER OF HOLY SPIRIT
 # License   : MIT
 # Year      : 2026
 # ORCID     : 0009-0008-2374-0788
 # GitHub    : yoonalimsuwan
 #
+# AI Co-Developers (architecture, differentiability design, integration):
+#   - Claude   (Anthropic)  — CahnHilliardMentalBridge design, full
+#                             differentiability audit, CSOC universality chain,
+#                             cross-ecosystem integration pattern, SSC EMA
+#                             boolean-buffer fix, DifferentiableSOC/RG canon
+#   - GPT      (OpenAI)     — literature cross-check, numerical stability
+#   - Gemini   (Google)     — operator scaffolding, structural base classes
+#   - DeepSeek              — stencil verification, alternative architectures
+#
 # Single source of truth for components shared across:
 #   mental_one.py                — psychiatric / neurological engine
 #   langevin_mental_bridge.py    — BAOAB Langevin ↔ brain-state bridge
 #   psy_one_bridge_diff.py       — PSY ONE fully-differentiable bridge
-#   structural_langevin.py       — BAOAB Langevin MD integrator
+#   structural_langevin_mental.py — BAOAB Langevin MD integrator
+#   structural_cahn_hilliard_3d.py — CH3D phase-field PDE (cross-ecosystem)
 #
 # This module is SEPARATE from:
 #   one_core.py           — DNS/CFD continuum scale
@@ -28,6 +39,7 @@
 #   StructuralItoBase          — abstract Itô correction     (Papers 2 & 3)
 #   DifferentiableRG           — fully differentiable learnable RG smoother
 #   DifferentiableSOC          — fully differentiable SOC dynamics (n-step)
+#   CahnHilliardMentalBridge   — CH3D ↔ MENTAL ONE cross-ecosystem bridge
 #   soft_clamp                 — differentiable alternative to hard .clamp()
 #   get_device                 — unified hardware-backend selector
 #   MENTAL_VERSION             — ecosystem-wide version string
@@ -46,7 +58,7 @@ import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
-MENTAL_VERSION: str = "1.0.0"
+MENTAL_VERSION: str = "2.0.0"
 
 
 # =============================================================================
@@ -371,8 +383,254 @@ class DifferentiableSOC(nn.Module):
         return x
 
 
+
+# =============================================================================
+# 8. structural_biharmonic_n — Module-level utility (shared with CH3D)
+# =============================================================================
+
+def structural_biharmonic_n(
+    field: torch.Tensor,
+    sigma: torch.Tensor,
+    n: int,
+    laplacian_fn,
+) -> torch.Tensor:
+    """
+    Compute the n-th power of the structural Laplacian: Δ_S^n u.
+
+    Exposed here so that ``structural_cahn_hilliard_3d.py`` and
+    ``one_core.py`` can share a single canonical implementation.
+
+    Args:
+        field        : (...) input tensor.
+        sigma        : (...) structural sigma-field (same shape as field).
+        n            : integer order ≥ 1.
+        laplacian_fn : callable(field, sigma) → tensor, same shape.
+    Returns:
+        Δ_S^n field, same shape as input.
+    """
+    if n < 1:
+        raise ValueError(f"n must be ≥ 1, got {n}")
+    result = field
+    for _ in range(n):
+        result = laplacian_fn(result, sigma)
+    return result
+
+
+# =============================================================================
+# 9. CahnHilliardMentalBridge — CH3D ↔ MENTAL ONE cross-ecosystem bridge
+# =============================================================================
+
+class CahnHilliardMentalBridge(nn.Module):
+    """
+    Cross-ecosystem bridge: Structural Cahn–Hilliard 3D  ↔  MENTAL ONE.
+
+    Physical interpretation
+    ───────────────────────
+    The order parameter field  u(x,t) ∈ [-1, +1]³  of the CH3D solver is
+    mapped to a brain-state stress signal that drives the SSC / CSOC
+    pipeline inside MENTAL ONE.  The mapping is:
+
+        σ_CH(t) = ‖∂_t u‖ₗ₂ / √(Nₓ Nᵧ N_z)          ← mean-field rate
+
+    This scalar flows into the shared ``SemanticStateContraction`` filter,
+    producing the same SSC stress σ that governs CSOC thermostat adaptation
+    in ``AdvancedStructuralLangevin`` and ``SOCController``.
+
+    Use cases
+    ─────────
+    1.  Psychiatric phase transitions modelled as spinodal decomposition:
+        The CH order parameter encodes the spatial distribution of a
+        neurochemical (e.g. dopamine gradient across cortical layers).
+        Phase separation → onset of a psychiatric episode.
+
+    2.  BV consistency: CH interface energy maps to the BV jump measure
+        in ``BVConsistency`` (mental_one.py).
+
+    3.  PFC (Phase-Field Crystal) mode: encodes neural oscillation
+        pattern formation (beta/gamma synchrony → crystal lattice).
+
+    Differentiability
+    ─────────────────
+    All operations are fully differentiable:
+    •  ``sigma_from_ch()`` uses soft_clamp + L2-norm (autograd-safe).
+    •  ``ch_to_brain_state()`` uses F.adaptive_avg_pool3d + linear proj.
+    •  ``energy_coupling()`` returns a scalar loss for joint training.
+
+    Args:
+        state_dim          : brain-state vector length (= n_ch × n_tp).
+        ssc                : shared SemanticStateContraction instance.
+        coupling_strength  : weight of CH energy in joint loss.
+        proj_bias          : learnable bias in the 3D→1D projection.
+    """
+
+    def __init__(
+        self,
+        state_dim        : int,
+        ssc              : Optional["SemanticStateContraction"] = None,
+        coupling_strength: float = 0.1,
+        proj_bias        : bool  = True,
+    ) -> None:
+        super().__init__()
+        self.state_dim         = state_dim
+        self.coupling_strength = coupling_strength
+
+        # Shared SSC filter — reuse the one from CSOCBase if provided
+        self.ssc = ssc if ssc is not None else SemanticStateContraction()
+
+        # Learnable 3D → 1D linear projection (CH volume → brain state)
+        self.proj = nn.Linear(1, state_dim, bias=proj_bias)
+
+        # Learnable coupling scalar (log-parameterised for positivity)
+        self.log_coupling = nn.Parameter(
+            torch.tensor(float(math.log(max(coupling_strength, 1e-8))))
+        )
+
+        # Buffer: previous CH field for computing ∂_t u
+        self.register_buffer("_prev_u",        torch.zeros(1))
+        self.register_buffer("_u_initialized", torch.tensor(False))
+
+    def reset(self) -> None:
+        """Reset temporal state between independent simulations."""
+        self._prev_u.zero_()
+        self._u_initialized.fill_(False)
+        self.ssc.reset()
+
+    # ------------------------------------------------------------------
+    def sigma_from_ch(self, u: torch.Tensor, dt: float = 1.0) -> torch.Tensor:
+        """
+        Compute SSC-filtered structural stress from CH order parameter.
+
+        σ_raw = ‖u - u_prev‖₂ / √N   (mean temporal rate)
+
+        Args:
+            u  : (...) current CH order parameter field (any 3D shape).
+            dt : time step of the CH solver (scales raw stress).
+        Returns:
+            σ : scalar tensor, SSC-filtered, fully differentiable.
+        """
+        u_flat = u.reshape(-1)
+
+        # Migrate buffer to correct device/dtype
+        if self._prev_u.device != u_flat.device or self._prev_u.dtype != u_flat.dtype:
+            self._prev_u       = self._prev_u.to(u_flat.device, u_flat.dtype)
+            self._u_initialized = self._u_initialized.to(u_flat.device)
+
+        if not self._u_initialized.item() or self._prev_u.shape != u_flat.shape:
+            self._prev_u       = u_flat.detach().clone()
+            self._u_initialized.fill_(True)
+            raw_sigma = torch.tensor(1e-6, device=u.device, dtype=u.dtype)
+        else:
+            diff      = u_flat - self._prev_u
+            raw_sigma = soft_clamp(
+                torch.sqrt((diff ** 2).mean() + 1e-12) / max(dt, 1e-8),
+                0.0, 1e6,
+            )
+
+        self._prev_u = u_flat.detach().clone()
+        return self.ssc(raw_sigma)
+
+    # ------------------------------------------------------------------
+    def ch_to_brain_state(self, u: torch.Tensor) -> torch.Tensor:
+        """
+        Project CH 3D order parameter field → 1D brain-state vector.
+
+        u (Nₓ, Nᵧ, N_z) → (state_dim,) via:
+          1. 3D average pooling → scalar mean field feature
+          2. Learnable linear projection to state_dim
+
+        Fully differentiable.
+
+        Args:
+            u : (Nx, Ny, Nz) or (B, Nx, Ny, Nz) CH order parameter.
+        Returns:
+            brain_state : (state_dim,) or (B, state_dim).
+        """
+        batched = u.dim() == 4
+        if not batched:
+            u = u.unsqueeze(0)   # (1, Nx, Ny, Nz)
+
+        # Global average pool → (B, 1)
+        pooled = F.adaptive_avg_pool3d(u.unsqueeze(1), 1).squeeze(-1).squeeze(-1).squeeze(-1)
+        # (B, 1) → (B, state_dim)
+        brain_state = self.proj(pooled.unsqueeze(-1)).squeeze(1)
+        # Normalise to [0, 1] range expected by MENTAL ONE
+        brain_state = soft_clamp(brain_state, 0.0, 1.0)
+
+        return brain_state if batched else brain_state.squeeze(0)
+
+    # ------------------------------------------------------------------
+    def energy_coupling(
+        self,
+        ch_energy: torch.Tensor,
+        psy_loss : torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Joint differentiable loss for co-training CH3D + MENTAL ONE.
+
+        L_joint = psy_loss + exp(log_coupling) * ch_energy
+
+        Args:
+            ch_energy : scalar CH structural free energy (from ch.structural_energy).
+            psy_loss  : scalar PSY ONE / MENTAL ONE loss.
+        Returns:
+            L_joint : scalar, backprop-ready.
+        """
+        w = torch.exp(self.log_coupling)
+        return psy_loss + w * ch_energy
+
+    # ------------------------------------------------------------------
+    def forward(
+        self,
+        u       : torch.Tensor,
+        ch_energy: Optional[torch.Tensor] = None,
+        psy_loss : Optional[torch.Tensor] = None,
+        dt      : float = 1.0,
+    ) -> dict:
+        """
+        Full differentiable forward pass.
+
+        Args:
+            u          : CH order parameter field (Nx, Ny, Nz).
+            ch_energy  : optional scalar CH free energy.
+            psy_loss   : optional scalar PSY / MENTAL ONE loss.
+            dt         : CH time step (for stress rate computation).
+        Returns:
+            dict with keys:
+                'sigma'       : SSC-filtered stress scalar.
+                'brain_state' : (state_dim,) projected brain-state vector.
+                'joint_loss'  : optional scalar (if both ch_energy and psy_loss given).
+        """
+        sigma       = self.sigma_from_ch(u, dt=dt)
+        brain_state = self.ch_to_brain_state(u)
+
+        result: dict = {"sigma": sigma, "brain_state": brain_state}
+
+        if ch_energy is not None and psy_loss is not None:
+            result["joint_loss"] = self.energy_coupling(ch_energy, psy_loss)
+
+        return result
+
+
 # =============================================================================
 # Module banner
 # =============================================================================
 
 logger.debug("ONE Core Mental v%s loaded.", MENTAL_VERSION)
+
+__all__ = [
+    # Version
+    "MENTAL_VERSION",
+    # Utilities
+    "soft_clamp",
+    "get_device",
+    "structural_biharmonic_n",
+    # Core components
+    "SemanticStateContraction",
+    "CSOCBase",
+    "InterfaceDetectorBase",
+    "StructuralItoBase",
+    "DifferentiableRG",
+    "DifferentiableSOC",
+    # Cross-ecosystem bridge
+    "CahnHilliardMentalBridge",
+]
