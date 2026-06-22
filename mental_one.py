@@ -443,7 +443,7 @@ class SSCClassifier(nn.Module):
             else:
                 self.register_buffer(f'ref_{d}', torch.zeros(self.n_total))
 
-        self.feature_references = {}
+        self.feature_references = {d: torch.zeros(5) for d in ALL_PSYCHIATRIC_DISORDERS}
         self.register_buffer('L', self._build_laplacian())
 
     def _build_laplacian(self) -> torch.Tensor:
@@ -538,24 +538,35 @@ class SSCClassifier(nn.Module):
 # 6. Learnable CSOC Kernel & SOC Controller
 # =============================================================================
 class CSOCKernel(nn.Module):
-    """Learnable kernel for SOC: K(r) = r^{-α} * exp(-r/scale)."""
-    def __init__(self, init_alpha=0.5, init_lambda=12.0, init_scale=8.0, eps=1e-4):
+    """
+    Learnable kernel for SOC — Lennard-Jones-style equilibrium form:
+        K(r) = lambd * [ (r_eq / r)^12 - (r_eq / r)^6 ]
+
+    Replaces the old pure power-law decay K(r) = r^{-alpha} * exp(-r/scale),
+    which had no repulsive core and therefore no equilibrium distance —
+    nodes/coordinates driven by this kernel could collapse toward r=0
+    without bound (the same failure mode fixed in REAL FOLD ONE's
+    CSOCKernel). This form has a true minimum at r = r_eq: repulsive
+    for r < r_eq, attractive for r > r_eq, smooth and differentiable
+    everywhere on (0, inf).
+    """
+    def __init__(self, init_lambda=12.0, init_r_eq=8.0, eps=1e-4):
         super().__init__()
-        self.log_alpha = nn.Parameter(torch.tensor(math.log(init_alpha)))
         self.log_lambda = nn.Parameter(torch.tensor(math.log(init_lambda)))
-        self.log_scale = nn.Parameter(torch.tensor(math.log(init_scale)))
+        self.log_r_eq   = nn.Parameter(torch.tensor(math.log(init_r_eq)))
         self.eps = eps
 
     @property
-    def alpha(self): return torch.exp(self.log_alpha)
-    @property
     def lambd(self): return torch.exp(self.log_lambda)
     @property
-    def scale(self): return torch.exp(self.log_scale)
+    def r_eq(self): return torch.exp(self.log_r_eq)
 
     def forward(self, r):
         safe_r = r + self.eps
-        return torch.exp(-self.log_alpha * torch.log(safe_r)) * torch.exp(-r / self.scale)
+        ratio = self.r_eq / safe_r
+        ratio6 = ratio ** 6
+        ratio12 = ratio6 * ratio6
+        return self.lambd * (ratio12 - ratio6)
 
 class SOCController(CSOCBase):
     """
@@ -630,9 +641,6 @@ class SOCController(CSOCBase):
             self._initialized = self._initialized.to(x.device)
 
         if not self._initialized.item() or self.prev_coords.shape != x.shape:
-            self.prev_coords.data = x.detach().clone() if x.shape == self.prev_coords.shape \
-                                    else x.detach().reshape(-1)[:1].clone()
-            # Reinitialise buffer to correct shape
             self.prev_coords = x.detach().clone()
             self._initialized.fill_(True)
             return self.ssc(torch.tensor(1.0, device=x.device))
@@ -680,7 +688,7 @@ class SOCController(CSOCBase):
 # =============================================================================
 # DiffRGRefiner replaced by DifferentiableRG from one_core_mental
 # (learnable kernel weights, end-to-end differentiable, no avg_pool+interpolate)
-DiffRGRefiner = DifferentiableRG   # backward-compatible alias
+# All call sites now use DifferentiableRG directly — no alias needed.
 
 class MentalHealthEvolution(nn.Module):
     def __init__(self, soc, rg):
@@ -780,11 +788,16 @@ class ExtremeTrainer:
         self.max_epochs = max_epochs
         self.early_stopping_patience = early_stopping_patience
 
+        # Always defined — non-DDP runs are effectively rank 0 of 1.
+        # (Fixes AttributeError when logging/reducing with use_ddp=False.)
+        self.local_rank = 0
+        self.world_size = 1
+
         # Build base model
         self.classifier = SSCClassifier(n_channels, n_timepoints).to(device)
         self.kernel = CSOCKernel().to(device)
         self.soc = SOCController(kernel=self.kernel).to(device)
-        self.rg = DiffRGRefiner().to(device)
+        self.rg = DifferentiableRG().to(device)
         self.evolution = MentalHealthEvolution(self.soc, self.rg).to(device)
 
         # For DDP, models will be wrapped later
@@ -925,8 +938,11 @@ class ExtremeTrainer:
                             loss = F.mse_loss(s_star, self.classifier.ref_Healthy)
                         else:
                             s_star = self.classifier(s0, n_iter=25, target=true_disease, healthy='Healthy')
-                            E_true = self.classifier.module.energy(s_star, true_disease, 'Healthy') if self.use_ddp else self.classifier.energy(s_star, true_disease, 'Healthy')
-                            mu_seq = s_star.reshape(self.classifier.module.n_channels, self.classifier.module.n_timepoints if self.use_ddp else self.classifier.n_channels, self.classifier.module.n_timepoints).mean(dim=0)
+                            clf = self.classifier.module if self.use_ddp else self.classifier
+                            E_true = clf.energy(s_star, true_disease, 'Healthy')
+                            mu_seq = s_star.reshape(
+                                clf.n_channels, clf.n_timepoints
+                            ).mean(dim=0)
                             evo = self.evolution(mu_seq, steps=20)
                             soc_penalty = torch.mean(evo['future'])
                             loss = E_true + 0.1 * soc_penalty
@@ -996,7 +1012,7 @@ class MentalONEEngine:
         self.classifier = SSCClassifier(n_ch, n_tp).to(self.device)
         for i, d in enumerate(ALL_PSYCHIATRIC_DISORDERS):
             setattr(self.classifier, f'ref_{d}', s0_batch.mean(dim=0))
-        self.evolution = MentalHealthEvolution(SOCController(), DiffRGRefiner()).to(self.device)
+        self.evolution = MentalHealthEvolution(SOCController(), DifferentiableRG()).to(self.device)
 
     def enable_langevin_bridge(
         self,
@@ -1118,8 +1134,10 @@ class MentalONEEngine:
             n_ch = eeg.shape[0]; n_tp = eeg.shape[1]
             self.classifier = SSCClassifier(n_ch, n_tp).to(self.device)
             for d in ALL_PSYCHIATRIC_DISORDERS:
-                setattr(self.classifier, f'ref_{d}', torch.randn_like(s0))
-            self.evolution = MentalHealthEvolution(SOCController(), DiffRGRefiner()).to(self.device)
+                ref_state = torch.randn_like(s0)
+                setattr(self.classifier, f'ref_{d}', ref_state)
+                self.classifier.feature_references[d] = self.classifier.extract_features(ref_state)
+            self.evolution = MentalHealthEvolution(SOCController(), DifferentiableRG()).to(self.device)
 
         s_star    = self.classifier(s0, n_iter=n_iter, target='MDD', healthy='Healthy')
         diagnosis = self.classifier.classify(s_star)   # returns str
