@@ -179,7 +179,7 @@ class CSOCThermostat(CSOCBase):
         # Temperature: smoothly rises above base_temp when stress exceeds target
         boost = self.base_temp * (self.temp_boost_factor - 1.0)
         adaptive_T = self.base_temp + boost * torch.sigmoid(dev)
-        adaptive_T = torch.clamp(
+        adaptive_T = soft_clamp(
             adaptive_T,
             self.base_temp * 0.5,
             self.base_temp * self.temp_boost_factor,
