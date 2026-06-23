@@ -90,7 +90,8 @@ import torch.nn.functional as F
 # ONE Core Mental — single source of truth for MENTAL ONE ecosystem
 from one_core_mental import (
     SemanticStateContraction,   # SSC EMA filter  (Paper 4)
-    DifferentiableRG,           # learnable RG smoother
+    DifferentiableRG,           # learnable RG smoother (replaces DiffRGRefiner
+                                 # — DiffRGRefiner was removed from mental_one.py)
     DifferentiableSOC,          # differentiable SOC dynamics
     CahnHilliardMentalBridge,   # CH3D ↔ MENTAL ONE cross-ecosystem bridge
     soft_clamp,                 # differentiable clamp
@@ -112,7 +113,6 @@ try:
         SSCClassifier,
         SOCController,
         CSOCKernel,
-        DiffRGRefiner,
         MentalHealthEvolution,
         ItoProcess,
         InterventionDesigner,
@@ -558,12 +558,12 @@ class SuperegoModule(nn.Module):
         # ── v2.0: soft error rate for differentiable behavioral entropy ────
         self._soft_error_rate: Optional[torch.Tensor] = None
 
-        if HAS_MENTAL_ONE:
-            self.rg_refiner: Optional[DiffRGRefiner] = DiffRGRefiner(
-                factor=2, n_levels=1
-            ).to(device)
-        else:
-            self.rg_refiner = None
+        # DifferentiableRG comes from one_core_mental (always imported at
+        # module load, not gated behind HAS_MENTAL_ONE) — replaces the
+        # removed DiffRGRefiner(factor=2, n_levels=1) from mental_one.py.
+        self.rg_refiner: Optional[DifferentiableRG] = DifferentiableRG(
+            kernel_size=5
+        ).to(device)
 
     # ------------------------------------------------------------------
     def set_societal_baseline(
