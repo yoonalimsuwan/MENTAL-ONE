@@ -461,10 +461,22 @@ class SSCClassifier(nn.Module):
         s_2d = s.reshape(self.n_channels, self.n_timepoints)
         feats = []
         if self.n_channels >= 5:
-            f3_idx = 2; f4_idx = 4
-            alpha_f3 = torch.norm(s_2d[f3_idx])**2 / self.n_timepoints
-            alpha_f4 = torch.norm(s_2d[f4_idx])**2 / self.n_timepoints
-            faa = torch.log(alpha_f3 + 1e-8) - torch.log(alpha_f4 + 1e-8)
+            # F3/F4 are used for frontal alpha asymmetry (FAA). Previously
+            # hardcoded as f3_idx=2, f4_idx=4 — index 4 in CHANNEL_1020 is
+            # 'Fz', not 'F4' (which is at index 5). That silently computed
+            # FAA from the wrong channel pair. Look up by name instead so
+            # this stays correct regardless of montage ordering assumptions.
+            try:
+                f3_idx = CHANNEL_1020.index('F3')
+                f4_idx = CHANNEL_1020.index('F4')
+            except ValueError:
+                f3_idx, f4_idx = 2, 5
+            if f4_idx >= self.n_channels:
+                faa = torch.tensor(0.0, device=s.device)
+            else:
+                alpha_f3 = torch.norm(s_2d[f3_idx])**2 / self.n_timepoints
+                alpha_f4 = torch.norm(s_2d[f4_idx])**2 / self.n_timepoints
+                faa = torch.log(alpha_f3 + 1e-8) - torch.log(alpha_f4 + 1e-8)
         else:
             faa = torch.tensor(0.0, device=s.device)
         feats.append(faa)
@@ -490,8 +502,13 @@ class SSCClassifier(nn.Module):
         s_2d = s.reshape(self.n_channels, self.n_timepoints)
         lap = (self.L @ s_2d).flatten()
         kernel = torch.tensor([-1, 2, -1], dtype=torch.float32, device=s.device)
-        s_padded = F.pad(s_2d.unsqueeze(0), (1,1), mode='replicate')
-        bandpass = F.conv1d(s_padded, kernel.view(1,1,-1)).squeeze(0).flatten()
+        # conv1d expects (batch, in_channels, length). Each EEG channel is an
+        # independent 1D signal, so it belongs in the batch dim with
+        # in_channels=1 — not stacked into in_channels as unsqueeze(0) did
+        # (that only worked by accident when n_channels == 1, otherwise
+        # raised a channel-mismatch error against the kernel's in_channels=1).
+        s_padded = F.pad(s_2d.unsqueeze(1), (1, 1), mode='replicate')
+        bandpass = F.conv1d(s_padded, kernel.view(1, 1, -1)).flatten()
         mu = s.mean()
         var = s.var()
         grad_t = torch.diff(s_2d, dim=1).mean()
@@ -512,26 +529,42 @@ class SSCClassifier(nn.Module):
         return E
 
     def contraction_update(self, s: torch.Tensor, target: str, healthy: str = 'Healthy') -> torch.Tensor:
+        # `s` must be a grad-enabled leaf for torch.autograd.grad to work.
+        # Callers (forward/classify paths) may pass plain tensors from a
+        # DataLoader or .reshape() chain that do not require grad, which
+        # previously raised "element 0 of tensors does not require grad".
+        if not s.requires_grad:
+            s = s.detach().clone().requires_grad_(True)
         grad = torch.autograd.grad(self.energy(s, target, healthy), s, create_graph=True)[0]
         s_next = s - self.eta * grad + self.beta * self.psi(s)
         return soft_clamp(s_next, 0.0, 1.0)
 
     def forward(self, s0: torch.Tensor, n_iter: int = 25,
                 target: str = 'MDD', healthy: str = 'Healthy') -> torch.Tensor:
-        s = s0
+        # Detach from any incoming graph and start a fresh leaf so the
+        # n_iter-step contraction below builds its own clean graph each call.
+        s = s0.detach().clone().requires_grad_(True)
         for _ in range(n_iter):
             s = self.contraction_update(s, target, healthy)
         return s
 
     def classify(self, s_star: torch.Tensor) -> str:
+        # Previously only used w_alpha * ||s - ref_d||^2, ignoring the
+        # feature-distance and healthy-contrast terms that energy() (and
+        # therefore training) actually optimizes against. That made the
+        # decision rule inconsistent with the objective the model was
+        # fit on. Reuse energy() directly so classification matches
+        # what the contraction dynamics were trained to minimize.
         best = 'Healthy'
         best_energy = float('inf')
-        for d in ALL_PSYCHIATRIC_DISORDERS:
-            if d == 'Healthy': continue
-            E = self.w_alpha * torch.sum((s_star - getattr(self, f'ref_{d}'))**2)
-            if E < best_energy:
-                best_energy = E
-                best = d
+        with torch.no_grad():
+            for d in ALL_PSYCHIATRIC_DISORDERS:
+                if d == 'Healthy':
+                    continue
+                E = self.energy(s_star, d, 'Healthy')
+                if E < best_energy:
+                    best_energy = E
+                    best = d
         return best
 
 # =============================================================================
@@ -640,13 +673,20 @@ class SOCController(CSOCBase):
             self.prev_coords  = self.prev_coords.to(x.device)
             self._initialized = self._initialized.to(x.device)
 
+        # Plain `self.prev_coords = x.detach().clone()` reassigns the
+        # attribute and silently drops it from the module's registered
+        # buffers (it would vanish from state_dict() and stop following
+        # later .to(device)/.cuda() calls). Use in-place copy on the
+        # buffer's storage instead, resizing first if shape changed.
         if not self._initialized.item() or self.prev_coords.shape != x.shape:
-            self.prev_coords = x.detach().clone()
+            if self.prev_coords.shape != x.shape:
+                self.prev_coords.resize_(x.shape)
+            self.prev_coords.copy_(x.detach())
             self._initialized.fill_(True)
             return self.ssc(torch.tensor(1.0, device=x.device))
 
         raw_sigma = torch.norm(x - self.prev_coords.view_as(x)).mean()
-        self.prev_coords = x.detach().clone()
+        self.prev_coords.copy_(x.detach())
         return self.ssc(raw_sigma)
 
     def temperature(self, sigma: torch.Tensor) -> torch.Tensor:
@@ -662,7 +702,9 @@ class SOCController(CSOCBase):
     def reset_state(self) -> None:
         """Reset SSC filter + prev_coords (call between independent patients)."""
         self.reset()                         # CSOCBase: resets self.ssc
-        self.prev_coords  = torch.zeros(1)
+        if self.prev_coords.shape != (1,):
+            self.prev_coords.resize_(1)
+        self.prev_coords.zero_()
         self._initialized.fill_(False)
 
     def soc_evolve(self, x: torch.Tensor, steps: int = 20) -> torch.Tensor:
@@ -1141,7 +1183,11 @@ class MentalONEEngine:
 
         s_star    = self.classifier(s0, n_iter=n_iter, target='MDD', healthy='Healthy')
         diagnosis = self.classifier.classify(s_star)   # returns str
-        mu_seq    = s_star.reshape(
+        # .reshape() can fail on a non-contiguous autograd result (s_star
+        # comes out of soft_clamp/contraction_update); .reshape() itself
+        # handles that via implicit copy, but we still need to detach
+        # before any non-tensor consumption (.tolist() / json.dump).
+        mu_seq    = s_star.detach().reshape(
             self.classifier.n_channels,
             self.classifier.n_timepoints
         ).mean(dim=0)
@@ -1151,10 +1197,13 @@ class MentalONEEngine:
         else:
             evo_result = self.evolution(mu_seq, steps=50)
         desired = self.classifier.ref_Healthy
-        plan = self.intervention.design_plan(diagnosis, s_star, desired)
+        plan = self.intervention.design_plan(diagnosis, s_star.detach(), desired)
+        future = evo_result['future']
+        if torch.is_tensor(future):
+            future = future.detach().cpu()
         return {
             'diagnosis': diagnosis,
-            'future_trajectory': evo_result['future'].tolist(),
+            'future_trajectory': future.tolist(),
             'treatment_plan': plan
         }
 
