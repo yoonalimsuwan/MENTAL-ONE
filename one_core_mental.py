@@ -355,6 +355,11 @@ class DifferentiableSOC(nn.Module):
         self.base_temp = nn.Parameter(torch.tensor(float(base_temp)))
         self.beta      = nn.Parameter(torch.tensor(float(beta)))
         self.n_steps   = n_steps
+        # Fixed normalisation constant for `scale` in forward() — captures
+        # the *initial* base_temp value but is NOT the parameter itself,
+        # so it stays constant across training and doesn't cancel
+        # base_temp's gradient signal out of the scale computation.
+        self.register_buffer("_t_ref", torch.tensor(float(abs(base_temp)) + 1e-8))
 
     def forward(
         self,
@@ -373,10 +378,22 @@ class DifferentiableSOC(nn.Module):
             Evolved tensor, same shape as x.
         """
         n = steps if steps is not None else self.n_steps
+        # Reference temperature is a fixed constant (the value base_temp
+        # was initialised to), captured once so it does NOT track the
+        # parameter — only used to non-dimensionalise T into a
+        # ratio. Previously this denominator was self.base_temp.abs()
+        # itself, which made T / |base_temp| algebraically cancel
+        # base_temp out of `scale` entirely (scale = 1 + 0.01*beta*(sigma-1),
+        # independent of base_temp's value). That left base_temp a
+        # dead nn.Parameter despite the docstring's claim it's trainable
+        # and meaningful. Normalising against a fixed reference instead
+        # lets base_temp actually shift `scale` (and gradients w.r.t. it
+        # carry real signal).
+        T_ref = self._t_ref
         for _ in range(n):
             sigma = x.std() + 1e-8
             T     = self.base_temp * (1.0 + self.beta * (sigma - 1.0))
-            scale = 1.0 + 0.01 * (T / (self.base_temp.abs() + 1e-8) - 1.0)
+            scale = 1.0 + 0.01 * (T / T_ref - 1.0)
             x     = x * scale
             # Use soft_clamp to keep gradients at boundaries
             x     = soft_clamp(x, 0.0, 1.0)
@@ -453,7 +470,9 @@ class CahnHilliardMentalBridge(nn.Module):
     ─────────────────
     All operations are fully differentiable:
     •  ``sigma_from_ch()`` uses soft_clamp + L2-norm (autograd-safe).
-    •  ``ch_to_brain_state()`` uses F.adaptive_avg_pool3d + linear proj.
+    •  ``ch_to_brain_state()`` uses F.adaptive_avg_pool3d (to a small
+       grid, not a single scalar — preserves coarse spatial structure)
+       + linear proj.
     •  ``energy_coupling()`` returns a scalar loss for joint training.
 
     Args:
@@ -461,6 +480,10 @@ class CahnHilliardMentalBridge(nn.Module):
         ssc                : shared SemanticStateContraction instance.
         coupling_strength  : weight of CH energy in joint loss.
         proj_bias          : learnable bias in the 3D→1D projection.
+        pool_grid          : side length of the pooled cube grid used
+                              before projection (pool_grid**3 cells).
+                              Larger retains more spatial detail at the
+                              cost of more projection parameters.
     """
 
     def __init__(
@@ -469,16 +492,21 @@ class CahnHilliardMentalBridge(nn.Module):
         ssc              : Optional["SemanticStateContraction"] = None,
         coupling_strength: float = 0.1,
         proj_bias        : bool  = True,
+        pool_grid        : int   = 4,
     ) -> None:
         super().__init__()
         self.state_dim         = state_dim
         self.coupling_strength = coupling_strength
+        self._pool_grid        = pool_grid
 
         # Shared SSC filter — reuse the one from CSOCBase if provided
         self.ssc = ssc if ssc is not None else SemanticStateContraction()
 
-        # Learnable 3D → 1D linear projection (CH volume → brain state)
-        self.proj = nn.Linear(1, state_dim, bias=proj_bias)
+        # Learnable (pool_grid^3) → state_dim linear projection
+        # (CH volume, coarse-pooled, → brain state). Previously this
+        # projected from a single pooled scalar (in_features=1); see
+        # ch_to_brain_state() for why that erased all spatial structure.
+        self.proj = nn.Linear(pool_grid ** 3, state_dim, bias=proj_bias)
 
         # Learnable coupling scalar (log-parameterised for positivity)
         self.log_coupling = nn.Parameter(
@@ -515,8 +543,15 @@ class CahnHilliardMentalBridge(nn.Module):
             self._prev_u       = self._prev_u.to(u_flat.device, u_flat.dtype)
             self._u_initialized = self._u_initialized.to(u_flat.device)
 
+        # Plain `self._prev_u = u_flat.detach().clone()` reassigns the
+        # attribute and silently drops it from the registered buffers
+        # (same bug already fixed in mental_one.py's SOCController.sigma()
+        # — it would vanish from state_dict() and stop following later
+        # .to(device) calls). Resize + copy_ in place instead.
         if not self._u_initialized.item() or self._prev_u.shape != u_flat.shape:
-            self._prev_u       = u_flat.detach().clone()
+            if self._prev_u.shape != u_flat.shape:
+                self._prev_u.resize_(u_flat.shape)
+            self._prev_u.copy_(u_flat.detach())
             self._u_initialized.fill_(True)
             raw_sigma = torch.tensor(1e-6, device=u.device, dtype=u.dtype)
         else:
@@ -525,8 +560,8 @@ class CahnHilliardMentalBridge(nn.Module):
                 torch.sqrt((diff ** 2).mean() + 1e-12) / max(dt, 1e-8),
                 0.0, 1e6,
             )
+            self._prev_u.copy_(u_flat.detach())
 
-        self._prev_u = u_flat.detach().clone()
         return self.ssc(raw_sigma)
 
     # ------------------------------------------------------------------
@@ -535,8 +570,18 @@ class CahnHilliardMentalBridge(nn.Module):
         Project CH 3D order parameter field → 1D brain-state vector.
 
         u (Nₓ, Nᵧ, N_z) → (state_dim,) via:
-          1. 3D average pooling → scalar mean field feature
-          2. Learnable linear projection to state_dim
+          1. 3D average pooling → small fixed-size pooled grid
+             (POOL_GRID³ cells), preserving coarse spatial structure
+          2. Learnable linear projection of the flattened grid to state_dim
+
+        Previously step 1 pooled all the way down to a single scalar
+        (adaptive_avg_pool3d(..., 1)), which meant every brain_state
+        component was just an affine function of one global mean —
+        no spatial information (gradients, localized phase separation,
+        etc., as described above) could possibly survive. Pooling to a
+        small grid instead of a point preserves coarse spatial pattern
+        while still keeping the projection input size fixed regardless
+        of the solver's actual (Nx, Ny, Nz) resolution.
 
         Fully differentiable.
 
@@ -549,10 +594,15 @@ class CahnHilliardMentalBridge(nn.Module):
         if not batched:
             u = u.unsqueeze(0)   # (1, Nx, Ny, Nz)
 
-        # Global average pool → (B, 1)
-        pooled = F.adaptive_avg_pool3d(u.unsqueeze(1), 1).squeeze(-1).squeeze(-1).squeeze(-1)
-        # (B, 1) → (B, state_dim)
-        brain_state = self.proj(pooled.unsqueeze(-1)).squeeze(1)
+        # Pool to a small fixed grid (POOL_GRID, POOL_GRID, POOL_GRID)
+        # instead of a single scalar, so coarse spatial structure
+        # (e.g. a dopamine gradient across one axis) is retained.
+        pooled = F.adaptive_avg_pool3d(
+            u.unsqueeze(1), self._pool_grid
+        )  # (B, 1, P, P, P)
+        pooled_flat = pooled.flatten(1)  # (B, P*P*P)
+
+        brain_state = self.proj(pooled_flat)  # (B, state_dim)
         # Normalise to [0, 1] range expected by MENTAL ONE
         brain_state = soft_clamp(brain_state, 0.0, 1.0)
 
