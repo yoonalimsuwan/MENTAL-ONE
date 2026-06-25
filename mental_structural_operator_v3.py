@@ -40,6 +40,18 @@
 #
 #   All topologies are modulated by the Structural Regime Field sigma(x),
 #   providing O(1) inference to replace heavy BAOAB, CH-PDE, and DEQ loops.
+#
+#   New in V3.1:
+#   - RealMentalDataset: trains on actual recorded EEG/fMRI (via
+#     psy_one_bridge_diff.RealSubjectDataLoader) instead of np.random data.
+#     id_prop / se_norm / ego_target labels come from running real EEG
+#     through the real PSYONEBridge Id/Ego/Superego solver (the thing MSNO
+#     is meant to approximate), not from synthetic mixtures.
+#   - has_fmri masking: subjects without a real fMRI/MEG scan no longer
+#     train the ch3d loss against a fabricated placeholder volume.
+#   - MSNOTrainingConfig.real_manifest switches build_dataloaders() between
+#     real and synthetic data; SyntheticMentalDataset is unchanged and
+#     still used whenever real_manifest is left as None (smoke-tests).
 # =============================================================================
 
 from __future__ import annotations
@@ -159,6 +171,16 @@ class MSNOTrainingConfig:
     langevin_teacher_steps: int = 100   # BAOAB steps for ground-truth EEG
     ch3d_teacher_steps:     int = 100   # CH3D steps for ground-truth phase
     psyche_n_samples:       int = 32    # samples per Ego optimisation call
+
+    # ── real-data ingestion (v3.1) ─────────────────────────────────────────
+    # If real_manifest is set, build_dataloaders() uses RealMentalDataset
+    # (actual recorded EEG/fMRI + PSYONEBridge teacher labels) instead of
+    # SyntheticMentalDataset. Leave as None to keep the synthetic smoke-test
+    # path unchanged.
+    real_manifest:    Optional[str] = None
+    real_data_root:   str           = ""
+    real_target_lag:  int           = 8     # timepoints ahead for eeg_target
+    real_crop_T:      int           = 256   # fixed crop length per subject
 
 
 # =============================================================================
@@ -584,6 +606,254 @@ class SyntheticMentalDataset(Dataset):
 
 
 # =============================================================================
+# 4b.  Real-subject dataset  (v3.1 — replaces SyntheticMentalDataset with
+#      actual recorded human data, using PSYONEBridge itself as the
+#      "teacher" that produces id_prop / se_norm / ego_target labels)
+# =============================================================================
+
+class RealMentalDataset(Dataset):
+    """
+    Real-data counterpart to SyntheticMentalDataset.
+
+    Source of truth for every field
+    --------------------------------
+    eeg          : REAL recording, loaded via
+                   psy_one_bridge_diff.RealSubjectDataLoader (EDF/BDF/FIF/
+                   SET/CSV/NPY/NPZ — see that module's docstring).
+    eeg_target   : the SAME real recording, time-shifted by `target_lag`
+                   timepoints. MSNO's EEG branch is trained to predict the
+                   recording's own short-horizon future, the standard
+                   self-supervised target for real physiological signals
+                   (no synthetic noise injected).
+    fmri_phase /
+    phase_target : REAL fMRI/MEG NIfTI volume pair if the manifest supplies
+                   `fmri_file` (+ optional `fmri_target_file`), loaded via
+                   RealSubjectDataLoader.load_fmri_file(). If a subject has
+                   no fMRI file, both fields are filled with zeros AND
+                   `has_fmri=False` is set so callers can mask that loss
+                   term out (see `ch3d_mask` below) instead of training
+                   against fabricated structure.
+    id_prop,
+    se_norm,
+    ego_target   : NOT measured directly by any instrument — they are the
+                   *teacher labels* produced by running the real EEG
+                   through the actual PSYONEBridge (Id/Ego/Superego DEQ)
+                   from psy_one_bridge_diff.py. This is principled because
+                   MSNO's whole purpose is to be an O(1) surrogate for that
+                   exact DEQ/Anderson-mixing computation — so the most
+                   honest label for "what would the real Ego solver output
+                   for this real brain-state" IS the real solver's output,
+                   not a synthetic substitute.
+    sigma        : structural stress scalar. Uses
+                   one_core_mental.SemanticStateContraction if available
+                   (the canonical SSC filter used elsewhere in the
+                   ecosystem); otherwise falls back to a simple normalised
+                   signal-power proxy, clearly marked in `meta`.
+
+    This class does NOT generate any np.random data for eeg/fmri — every
+    physiological field traces back to a file on disk. Only the
+    teacher-derived labels (id_prop/se_norm/ego_target) and the sigma
+    fallback are *computed*, and both are computed from the real input,
+    never sampled independently of it.
+    """
+
+    def __init__(
+        self,
+        manifest_path : str,
+        data_root     : str = "",
+        action_dim    : int = 10,
+        target_lag    : int = 8,
+        crop_timepoints: Optional[int] = 256,
+        nx: int = 16, ny: int = 16, nz: int = 16,
+        device        : str = "cpu",
+        verbose       : bool = True,
+    ) -> None:
+        super().__init__()
+        if not _HAS_PSY:
+            raise ImportError(
+                "RealMentalDataset requires psy_one_bridge_diff.py to be "
+                "importable (for RealSubjectDataLoader and PSYONEBridge). "
+                "It was not found — check it's on the same path."
+            )
+        # Local import to avoid a hard module-level dependency when only
+        # the synthetic path is used elsewhere in this file.
+        from psy_one_bridge_diff import RealSubjectDataLoader, PsycheConfig as _PsyCfg
+
+        self.A  = action_dim
+        self.target_lag = target_lag
+        self.crop_T = crop_timepoints
+        self.nx, self.ny, self.nz = nx, ny, nz
+
+        loader = RealSubjectDataLoader()
+        cohort = loader.load_manifest(manifest_path, data_root=data_root)
+        if not cohort:
+            raise ValueError(f"Manifest '{manifest_path}' produced an empty cohort.")
+
+        # ── Teacher bridge: real Id/Ego/Superego solver, used only to
+        #    LABEL each real subject's EEG — never trained itself here. ──
+        teacher_cfg    = _PsyCfg(action_dim=action_dim, device=torch.device(device))
+        self._teacher  = PSYONEBridge(config=teacher_cfg)
+
+        self.records: List[Any] = []
+        n_with_fmri = 0
+
+        for rec in cohort:
+            eeg_np = rec.eeg.numpy().astype(np.float32)   # (C, T_raw)
+
+            # ── Normalise to [0,1] per-channel (matches synthetic contract,
+            #    where eeg values are also produced/consumed in [0,1]) ──
+            ch_min = eeg_np.min(axis=1, keepdims=True)
+            ch_max = eeg_np.max(axis=1, keepdims=True)
+            eeg_norm = (eeg_np - ch_min) / (ch_max - ch_min + 1e-8)
+
+            # ── Crop / pad to a fixed T so batching works ──────────────
+            T_raw = eeg_norm.shape[1]
+            if self.crop_T is not None:
+                if T_raw >= self.crop_T + self.target_lag:
+                    eeg_fixed = eeg_norm[:, : self.crop_T + self.target_lag]
+                else:
+                    pad = (self.crop_T + self.target_lag) - T_raw
+                    eeg_fixed = np.pad(eeg_norm, ((0, 0), (0, pad)), mode="edge")
+            else:
+                eeg_fixed = eeg_norm
+
+            eeg_in     = eeg_fixed[:, : -self.target_lag] if self.target_lag > 0 else eeg_fixed
+            eeg_future = eeg_fixed[:, self.target_lag :] if self.target_lag > 0 else eeg_fixed
+            min_T = min(eeg_in.shape[1], eeg_future.shape[1])
+            eeg_in, eeg_future = eeg_in[:, :min_T], eeg_future[:, :min_T]
+
+            # ── Real fMRI/MEG pair, if the manifest row supplied one ───
+            has_fmri = False
+            phase      = np.zeros((1, nx, ny, nz), dtype=np.float32)
+            phase_tgt  = np.zeros((1, nx, ny, nz), dtype=np.float32)
+            fmri_file        = rec.behavior.get("fmri_file") if rec.behavior else None
+            fmri_target_file = rec.behavior.get("fmri_target_file") if rec.behavior else None
+            if fmri_file:
+                try:
+                    full_path = fmri_file if os.path.isabs(fmri_file) else os.path.join(data_root, fmri_file)
+                    fmri_rec  = loader.load_fmri_file(full_path)
+                    phase     = self._volume_to_fixed_grid(fmri_rec.eeg.numpy(), nx, ny, nz)
+                    if fmri_target_file:
+                        tgt_path = fmri_target_file if os.path.isabs(fmri_target_file) else os.path.join(data_root, fmri_target_file)
+                        tgt_rec  = loader.load_fmri_file(tgt_path)
+                        phase_tgt = self._volume_to_fixed_grid(tgt_rec.eeg.numpy(), nx, ny, nz)
+                    else:
+                        phase_tgt = phase.copy()  # no separate target scan available
+                    has_fmri = True
+                    n_with_fmri += 1
+                except Exception as e:
+                    logger.warning(f"  [{rec.subject_id}] fMRI load failed, masking ch3d loss: {e}")
+
+            # ── Teacher labels: run REAL EEG through the REAL Id/Ego/
+            #    Superego solver to get honest id_prop/se_norm/ego_target ──
+            self._teacher.reset()
+            eeg_tensor = torch.from_numpy(eeg_in).float()
+            state = self._teacher.run_psyche_cycle(eeg_tensor, rec.salience)
+
+            id_prop = self._teacher.triad.id_module.generate_proposals().detach().cpu().numpy()
+            se_norm = self._teacher.triad.superego_module.normative_policy.detach().cpu().numpy()
+            ego_tgt = np.asarray(state.optimized_policy, dtype=np.float32)
+
+            # ── Structural stress σ: SSC filter if available, else a
+            #    transparent signal-power proxy (clearly flagged in meta) ──
+            sigma_val, sigma_method = self._estimate_sigma(eeg_in)
+
+            self.records.append({
+                "subject_id"   : rec.subject_id,
+                "label"        : rec.label,
+                "eeg"          : eeg_in.astype(np.float32),
+                "eeg_target"   : eeg_future.astype(np.float32),
+                "fmri_phase"   : phase,
+                "phase_target" : phase_tgt,
+                "has_fmri"     : has_fmri,
+                "id_prop"      : id_prop.astype(np.float32),
+                "se_norm"      : se_norm.astype(np.float32),
+                "ego_target"   : ego_tgt.astype(np.float32),
+                "sigma"        : np.float32(sigma_val),
+                "sigma_method" : sigma_method,
+            })
+
+        if verbose:
+            logger.info(
+                f"RealMentalDataset: loaded {len(self.records)} real subjects "
+                f"from '{manifest_path}'  ({n_with_fmri} with real fMRI; "
+                f"{len(self.records) - n_with_fmri} will mask the ch3d loss term)"
+            )
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _volume_to_fixed_grid(vol: np.ndarray, nx: int, ny: int, nz: int) -> np.ndarray:
+        """
+        Reduce a real (n_rois_or_1, T) fMRI time-series (already ROI/whole-
+        brain-reduced by RealSubjectDataLoader.load_fmri_file) into a fixed
+        (1, nx, ny, nz) "phase-field-like" snapshot by taking the latest
+        timepoint and tiling/cropping ROI values onto the grid.
+
+        This is an honest geometric placement of real per-ROI signal, not a
+        synthetic phase field — but note it is a coarse proxy, not a true
+        spatial reconstruction, since psy_one_bridge_diff's CH3D branch
+        expects a dense 3D field and most EEG-paired fMRI manifests only
+        give ROI-reduced series. For full spatial fidelity, pass raw 4D
+        NIfTI volumes directly into a custom loader instead.
+        """
+        latest = vol[:, -1]                      # (n_rois,)
+        n_cells = nx * ny * nz
+        if latest.size >= n_cells:
+            grid = latest[:n_cells]
+        else:
+            reps = int(np.ceil(n_cells / latest.size))
+            grid = np.tile(latest, reps)[:n_cells]
+        grid = grid.reshape(1, nx, ny, nz)
+        g_min, g_max = grid.min(), grid.max()
+        grid = 2.0 * (grid - g_min) / (g_max - g_min + 1e-8) - 1.0   # → [-1, 1]
+        return grid.astype(np.float32)
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _estimate_sigma(eeg_in: np.ndarray) -> Tuple[float, str]:
+        """
+        Structural stress σ for a real subject.
+
+        Prefers one_core_mental.SemanticStateContraction (canonical SSC
+        filter) when the ecosystem is installed; otherwise falls back to
+        a normalised signal-power proxy (variance of the real EEG, scaled
+        into the [0.5, 2.0] band SyntheticMentalDataset also used, so
+        loss-scale stays comparable run-to-run). The fallback is always
+        reported via `sigma_method` — it is never silently treated as the
+        canonical SSC value.
+        """
+        if _HAS_ONE_CORE_MENTAL:
+            try:
+                ssc = SemanticStateContraction()  # type: ignore[name-defined]
+                sig = ssc(torch.from_numpy(eeg_in).float().unsqueeze(0))
+                return float(sig.mean().item()), "one_core_mental.SemanticStateContraction"
+            except Exception as e:
+                logger.warning(f"SSC sigma estimation failed, using power proxy: {e}")
+        power = float(np.var(eeg_in))
+        sigma = 0.5 + 1.5 * (1.0 / (1.0 + math.exp(-(power - 1.0))))  # squashed → [0.5, 2.0]
+        return sigma, "fallback_signal_power_proxy"
+
+    # ------------------------------------------------------------------
+    def __len__(self) -> int:
+        return len(self.records)
+
+    # ------------------------------------------------------------------
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        r = self.records[idx]
+        return {
+            "eeg":          torch.from_numpy(r["eeg"]),
+            "eeg_target":   torch.from_numpy(r["eeg_target"]),
+            "fmri_phase":   torch.from_numpy(r["fmri_phase"]),
+            "phase_target": torch.from_numpy(r["phase_target"]),
+            "id_prop":      torch.from_numpy(r["id_prop"]),
+            "se_norm":      torch.from_numpy(r["se_norm"]),
+            "ego_target":   torch.from_numpy(r["ego_target"]),
+            "sigma":        torch.tensor(r["sigma"]),
+            "has_fmri":     torch.tensor(r["has_fmri"]),
+        }
+
+
+# =============================================================================
 # 5.  Trainer
 # =============================================================================
 
@@ -712,6 +982,9 @@ class MSNOTrainer:
         se_norm    = batch["se_norm"].to(self.device)      # (B, A)
         ego_tgt    = batch["ego_target"].to(self.device)   # (B, A)
         sigma_raw  = batch["sigma"].to(self.device)        # (B,)
+        # has_fmri only present for RealMentalDataset batches; synthetic
+        # batches have no missing-modality subjects, so default to all-True.
+        has_fmri   = batch.get("has_fmri", torch.ones(eeg.size(0), dtype=torch.bool)).to(self.device)
 
         # Reshape sigma for each branch
         sigma_1d   = sigma_raw.view(-1, 1, 1)              # (B, 1, 1)
@@ -726,8 +999,15 @@ class MSNOTrainer:
             loss_eeg  = MSNOLosses.eeg_loss(eeg_pred, eeg_target)
 
             # ── Task 2: 3D CH phase separation ───────────────────────────
+            # Masked: subjects without a real fMRI scan (has_fmri=False)
+            # contribute zero to this loss instead of being trained
+            # against a fabricated placeholder volume.
             ph_pred   = self.model.predict_spatial_phase(phase, sigma_3d)
-            loss_ch3d = MSNOLosses.phase_loss(ph_pred, ph_target)
+            if has_fmri.any():
+                mask = has_fmri.float().view(-1, 1, 1, 1, 1)
+                loss_ch3d = MSNOLosses.phase_loss(ph_pred * mask, ph_target * mask)
+            else:
+                loss_ch3d = torch.zeros((), device=self.device, dtype=ph_pred.dtype)
 
             # ── Task 3: Ego optimisation ──────────────────────────────────
             ego_pred  = self.model.optimize_ego(id_prop, se_norm, sigma_flat)
@@ -779,6 +1059,7 @@ class MSNOTrainer:
             se_norm    = batch["se_norm"].to(self.device)
             ego_tgt    = batch["ego_target"].to(self.device)
             sigma_raw  = batch["sigma"].to(self.device)
+            has_fmri   = batch.get("has_fmri", torch.ones(eeg.size(0), dtype=torch.bool)).to(self.device)
 
             sigma_1d   = sigma_raw.view(-1, 1, 1)
             sigma_3d   = sigma_raw.view(-1, 1, 1, 1, 1)
@@ -790,7 +1071,11 @@ class MSNOTrainer:
                 ego_pred  = self.model.optimize_ego(id_prop, se_norm, sigma_flat)
 
                 l_eeg  = MSNOLosses.eeg_loss(eeg_pred, eeg_target)
-                l_ch3d = MSNOLosses.phase_loss(ph_pred, ph_target)
+                if has_fmri.any():
+                    mask  = has_fmri.float().view(-1, 1, 1, 1, 1)
+                    l_ch3d = MSNOLosses.phase_loss(ph_pred * mask, ph_target * mask)
+                else:
+                    l_ch3d = torch.zeros((), device=self.device, dtype=ph_pred.dtype)
                 l_ego  = MSNOLosses.ego_loss(ego_pred, ego_tgt)
                 l_tot  = (cfg.lambda_eeg  * l_eeg
                           + cfg.lambda_ch3d * l_ch3d
@@ -968,15 +1253,34 @@ def build_dataloaders(cfg: MSNOTrainingConfig,
                       val_fraction: float = 0.15
                       ) -> Tuple[DataLoader, DataLoader]:
     """
-    Build synthetic train/val DataLoaders.
-    Swap SyntheticMentalDataset for your real dataset here.
+    Build train/val DataLoaders.
+
+    If cfg.real_manifest is set, loads REAL subject data (EEG/fMRI files +
+    PSYONEBridge teacher labels) via RealMentalDataset. Otherwise falls
+    back to SyntheticMentalDataset for smoke-testing the pipeline.
     """
-    dataset = SyntheticMentalDataset(
-        n_samples=512,
-        eeg_channels=cfg.eeg_channels,
-        action_dim=cfg.action_dim,
-        seed=cfg.seed,
-    )
+    if cfg.real_manifest:
+        dataset = RealMentalDataset(
+            manifest_path = cfg.real_manifest,
+            data_root     = cfg.real_data_root,
+            action_dim    = cfg.action_dim,
+            target_lag    = cfg.real_target_lag,
+            crop_timepoints = cfg.real_crop_T,
+            device        = "cpu",   # loading runs on CPU; trainer moves to cfg.device later
+        )
+        logger.info(
+            f"build_dataloaders: using REAL data from '{cfg.real_manifest}' "
+            f"({len(dataset)} subjects)"
+        )
+    else:
+        dataset = SyntheticMentalDataset(
+            n_samples=512,
+            eeg_channels=cfg.eeg_channels,
+            action_dim=cfg.action_dim,
+            seed=cfg.seed,
+        )
+        logger.info("build_dataloaders: using SYNTHETIC smoke-test data")
+
     n_val   = max(1, int(len(dataset) * val_fraction))
     n_train = len(dataset) - n_val
     train_ds, val_ds = torch.utils.data.random_split(
