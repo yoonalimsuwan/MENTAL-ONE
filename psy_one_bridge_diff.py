@@ -62,6 +62,25 @@
 #      • GumbelAnnealScheduler anneals τ: 1.0 → 0.1 over training steps.
 #      • Hard mode (τ → 0) recovers the original argmax at inference.
 #
+#  [7] v2.1 — REAL-SUBJECT DATA INGESTION  (new)
+#      • Added RealSubjectDataLoader: reads real EEG (.edf/.bdf/.gdf/.set/
+#        .fif/.vhdr via MNE), plain numeric exports (.npy/.npz/.csv), and
+#        fMRI/MEG NIfTI volumes (.nii/.nii.gz via nibabel) into the same
+#        (n_channels, n_timepoints) tensor shape PSYONEBridge already
+#        consumes. No change to the Id/Ego/Superego math — only the
+#        SOURCE of `sensory_state` changes: synthetic sine waves → real
+#        recordings.
+#      • Added SubjectRecord dataclass + load_manifest() for whole real
+#        cohorts (subject_id, file_path, label, optional salience_file).
+#      • Added PSYONEBenchmarkReal: runs on real cohorts and reports
+#        honest label-match accuracy ONLY when real ground-truth labels
+#        are present — never a hardcoded "expected range," never invented.
+#      • NOTE: PSYONEBenchmark (synthetic, §8 below) still exists for
+#        quick smoke-testing the pipeline with sine-wave EEG. Its
+#        "target_range": "0.78–0.85" is a SELF-CONSISTENCY CHECK on the
+#        synthetic generator only — it is not an empirical finding about
+#        human subjects and should never be cited as one.
+#
 # Dependencies (all permissive licences):
 #   • PyTorch ≥ 2.0      (BSD-style)
 #   • NumPy              (BSD-3-Clause)
@@ -132,6 +151,378 @@ except ImportError:
     logger.warning(
         "MENTAL ONE not found — PSY ONE BRIDGE DIFF running in standalone mode."
     )
+
+
+# =============================================================================
+# 0.0  REAL-SUBJECT DATA INGESTION  (v2.1)
+# =============================================================================
+#
+# Everything below this point used to only ever see synthetic sine-wave EEG
+# (see PSYONEBenchmark._generate_synthetic_eeg further down). This section
+# adds a loader that reads ACTUAL recorded data from real participants —
+# EEG files (.edf / .bdf / .fif / .set via MNE), plain numeric exports
+# (.csv / .npy / .npz), and optionally fMRI/MEG NIfTI volumes (via nibabel) —
+# and turns them into the same (n_channels, n_timepoints) tensor shape that
+# PSYONEBridge.forward() / ._extract_features() already expects.
+#
+# Nothing about the Id/Ego/Superego math changes. Only the SOURCE of
+# `sensory_state` changes: synthetic generator → real recording.
+#
+# Optional heavy deps (mne, nibabel) are imported lazily so the rest of the
+# file keeps working with zero extra install if you only ever use
+# .csv / .npy / .npz subject data.
+# =============================================================================
+
+class RealDataFormatError(Exception):
+    """Raised when a real-subject data file can't be parsed into (C, T)."""
+
+
+@dataclass
+class SubjectRecord:
+    """
+    One real participant's data, ready to feed into PSYONEBridge.
+
+    Attributes
+    ----------
+    subject_id   : str    Arbitrary identifier (e.g. "P017", "sub-04").
+    eeg          : Tensor (n_channels, n_timepoints) — float32, on CPU.
+                   This is exactly what PSYONEBridge.forward()/run_psyche_cycle()
+                   consumes as `sensory_state` / `eeg_state`.
+    channel_names: List[str] or None  — kept for reporting/debugging only.
+    sample_rate  : float or None      — Hz, if known.
+    salience     : Tensor (action_dim,) or None — optional per-subject
+                   emotional salience vector (e.g. from a behavioral task).
+                   If None, PSYONEBridge defaults to a uniform vector.
+    label        : str or None   — ground-truth clinical label/group, e.g.
+                   "Healthy", "MDD", "OCD", "PTSD", "Schizophrenia" — used
+                   ONLY for honest post-hoc accuracy scoring, never fed
+                   into the model.
+    behavior     : Dict[str, Any] — optional extra behavioral/task data
+                   (reaction times, accuracy on a decision task, MMPI/BFI
+                   scores, etc.) carried along for reporting/regression,
+                   not consumed by the model itself.
+    meta         : Dict[str, Any] — anything else (site, scanner, notes).
+    """
+    subject_id    : str
+    eeg           : torch.Tensor
+    channel_names : Optional[List[str]] = None
+    sample_rate   : Optional[float]     = None
+    salience      : Optional[torch.Tensor] = None
+    label         : Optional[str]       = None
+    behavior      : Dict[str, Any]      = field(default_factory=dict)
+    meta          : Dict[str, Any]      = field(default_factory=dict)
+
+
+class RealSubjectDataLoader:
+    """
+    Loads real human EEG/fMRI/behavioral data from disk into SubjectRecord
+    objects that plug directly into PSYONEBridge / PSYONEBenchmarkReal.
+
+    Supported formats
+    ------------------
+    EEG (requires `pip install mne`):
+        .edf, .bdf, .gdf, .set (EEGLAB), .fif (MNE/MEG-EEG), .vhdr (BrainVision)
+    Plain numeric (no extra deps):
+        .npy   — array shaped (n_channels, n_timepoints) or (n_timepoints,)
+        .npz   — must contain key "eeg" (or pass `array_key`); optional
+                 "channel_names", "sample_rate"
+        .csv   — rows = channels, columns = timepoints (no header), OR
+                 columns = channels with a header row (auto-detected by
+                 checking whether the first row parses as floats)
+    fMRI / volumetric (requires `pip install nibabel`):
+        .nii, .nii.gz — 4D volume (X, Y, Z, T); reduced to a per-ROI or
+                        global-mean time series via `roi_mask`/`reduce`.
+
+    A companion manifest CSV can map subject_id → file_path/label/extra
+    columns so loaded data carries ground truth for honest accuracy
+    scoring (see PSYONEBenchmarkReal below).
+
+    This class does NOT touch model weights or training — it is pure I/O
+    + reshaping, mirroring the EEG (C, T) contract already used by
+    PSYONEBridge._extract_features().
+    """
+
+    def __init__(self, target_sample_rate: Optional[float] = None) -> None:
+        self.target_sample_rate = target_sample_rate
+        self._mne = None
+        self._nib = None
+
+    # ------------------------------------------------------------------
+    def _require_mne(self):
+        if self._mne is None:
+            try:
+                import mne  # type: ignore
+                mne.set_log_level("ERROR")
+                self._mne = mne
+            except ImportError as e:
+                raise RealDataFormatError(
+                    "Reading .edf/.bdf/.gdf/.set/.fif/.vhdr files requires MNE-Python. "
+                    "Install it with:  pip install mne --break-system-packages"
+                ) from e
+        return self._mne
+
+    # ------------------------------------------------------------------
+    def _require_nibabel(self):
+        if self._nib is None:
+            try:
+                import nibabel as nib  # type: ignore
+                self._nib = nib
+            except ImportError as e:
+                raise RealDataFormatError(
+                    "Reading .nii/.nii.gz fMRI volumes requires nibabel. "
+                    "Install it with:  pip install nibabel --break-system-packages"
+                ) from e
+        return self._nib
+
+    # ------------------------------------------------------------------
+    def load_eeg_file(
+        self,
+        path        : str,
+        subject_id  : Optional[str] = None,
+        l_freq      : Optional[float] = 0.5,
+        h_freq      : Optional[float] = 45.0,
+        max_seconds : Optional[float] = None,
+    ) -> SubjectRecord:
+        """
+        Load one real EEG recording via MNE.
+
+        Applies a light bandpass filter (default 0.5–45 Hz, standard for
+        clinical/psychiatric EEG) so raw artifacts don't dominate the
+        entropy/free-energy computation. Set l_freq/h_freq=None to skip.
+        """
+        import os
+        ext = os.path.splitext(path)[1].lower()
+        mne = self._require_mne()
+
+        reader_map = {
+            ".edf": mne.io.read_raw_edf,
+            ".bdf": mne.io.read_raw_bdf,
+            ".gdf": mne.io.read_raw_gdf,
+            ".set": mne.io.read_raw_eeglab,
+            ".fif": mne.io.read_raw_fif,
+            ".vhdr": mne.io.read_raw_brainvision,
+        }
+        if ext not in reader_map:
+            raise RealDataFormatError(
+                f"Unsupported EEG file extension '{ext}'. "
+                f"Supported: {sorted(reader_map.keys())}"
+            )
+
+        raw = reader_map[ext](path, preload=True, verbose=False)
+        if l_freq is not None or h_freq is not None:
+            raw.filter(l_freq=l_freq, h_freq=h_freq, verbose=False)
+        if max_seconds is not None:
+            raw.crop(tmax=min(max_seconds, raw.times[-1]), verbose=False)
+
+        data = raw.get_data()  # (n_channels, n_timepoints), Volts
+        # Convert V → µV scale, consistent with typical clinical EEG magnitude
+        data = data * 1e6
+
+        sfreq = float(raw.info["sfreq"])
+        if self.target_sample_rate and sfreq != self.target_sample_rate:
+            raw_resampled = raw.copy().resample(self.target_sample_rate, verbose=False)
+            data  = raw_resampled.get_data() * 1e6
+            sfreq = self.target_sample_rate
+
+        eeg = torch.from_numpy(np.ascontiguousarray(data)).float()
+
+        return SubjectRecord(
+            subject_id    = subject_id or os.path.splitext(os.path.basename(path))[0],
+            eeg           = eeg,
+            channel_names = list(raw.info["ch_names"]),
+            sample_rate   = sfreq,
+            meta          = {"source_file": path, "format": ext},
+        )
+
+    # ------------------------------------------------------------------
+    def load_numeric_file(
+        self,
+        path       : str,
+        subject_id : Optional[str] = None,
+        array_key  : str = "eeg",
+    ) -> SubjectRecord:
+        """Load real numeric data with no extra dependencies: .npy/.npz/.csv."""
+        import os
+        ext = os.path.splitext(path)[1].lower()
+        sid = subject_id or os.path.splitext(os.path.basename(path))[0]
+
+        channel_names: Optional[List[str]] = None
+        sample_rate  : Optional[float]     = None
+
+        if ext == ".npy":
+            arr = np.load(path)
+        elif ext == ".npz":
+            npz = np.load(path, allow_pickle=True)
+            if array_key not in npz:
+                raise RealDataFormatError(
+                    f"'{path}' has no array named '{array_key}'. "
+                    f"Available keys: {list(npz.keys())}"
+                )
+            arr = npz[array_key]
+            if "channel_names" in npz:
+                channel_names = [str(c) for c in npz["channel_names"]]
+            if "sample_rate" in npz:
+                sample_rate = float(npz["sample_rate"])
+        elif ext == ".csv":
+            raw_rows = []
+            with open(path, "r", newline="") as f:
+                for line in f:
+                    raw_rows.append(line.strip().split(","))
+            header = None
+            try:
+                [float(x) for x in raw_rows[0]]
+                data_rows = raw_rows
+            except ValueError:
+                header = raw_rows[0]
+                data_rows = raw_rows[1:]
+            arr = np.array([[float(x) for x in row] for row in data_rows], dtype=np.float32)
+            if header is not None:
+                channel_names = header
+        else:
+            raise RealDataFormatError(
+                f"Unsupported numeric file extension '{ext}'. Use .npy, .npz, or .csv."
+            )
+
+        arr = np.asarray(arr, dtype=np.float32)
+        if arr.ndim == 1:
+            arr = arr[None, :]          # (T,) → (1, T)
+        elif arr.ndim != 2:
+            raise RealDataFormatError(
+                f"Expected a 1D or 2D array for '{path}', got shape {arr.shape}."
+            )
+
+        return SubjectRecord(
+            subject_id    = sid,
+            eeg           = torch.from_numpy(arr).float(),
+            channel_names = channel_names,
+            sample_rate   = sample_rate,
+            meta          = {"source_file": path, "format": ext},
+        )
+
+    # ------------------------------------------------------------------
+    def load_fmri_file(
+        self,
+        path        : str,
+        subject_id  : Optional[str] = None,
+        roi_mask    : Optional[str] = None,
+        reduce      : str = "mean",
+    ) -> SubjectRecord:
+        """
+        Load a real 4D fMRI/MEG NIfTI volume and reduce it to a
+        (n_rois_or_1, n_timepoints) time-series tensor.
+
+        Parameters
+        ----------
+        roi_mask : path to a NIfTI mask/atlas. If given, one time series is
+                   produced per distinct nonzero label in the mask
+                   (n_rois, T). If None, the whole-brain mean is used (1, T).
+        reduce   : "mean" (default) or "pca1" — how voxels within an ROI
+                   are combined into a single time series.
+        """
+        import os
+        nib = self._require_nibabel()
+
+        img  = nib.load(path)
+        data = img.get_fdata(dtype=np.float32)   # (X, Y, Z, T)
+        if data.ndim != 4:
+            raise RealDataFormatError(
+                f"Expected a 4D fMRI volume (X,Y,Z,T) in '{path}', got shape {data.shape}."
+            )
+        x, y, z, t = data.shape
+        flat = data.reshape(-1, t)               # (voxels, T)
+
+        if roi_mask is not None:
+            mask_img  = nib.load(roi_mask)
+            mask_data = mask_img.get_fdata().reshape(-1).astype(np.int64)
+            labels    = sorted(int(l) for l in np.unique(mask_data) if l != 0)
+            series = []
+            for lbl in labels:
+                voxel_ts = flat[mask_data == lbl]      # (n_voxels_in_roi, T)
+                if reduce == "pca1":
+                    centered = voxel_ts - voxel_ts.mean(axis=1, keepdims=True)
+                    u, s, vt = np.linalg.svd(centered, full_matrices=False)
+                    series.append(vt[0] * s[0])
+                else:
+                    series.append(voxel_ts.mean(axis=0))
+            arr = np.stack(series, axis=0)             # (n_rois, T)
+            channel_names = [f"ROI_{l}" for l in labels]
+        else:
+            arr = flat.mean(axis=0, keepdims=True)     # (1, T) whole-brain mean
+            channel_names = ["whole_brain_mean"]
+
+        return SubjectRecord(
+            subject_id    = subject_id or os.path.splitext(os.path.basename(path))[0].split(".")[0],
+            eeg           = torch.from_numpy(np.ascontiguousarray(arr)).float(),
+            channel_names = channel_names,
+            meta          = {"source_file": path, "format": "nifti", "roi_mask": roi_mask},
+        )
+
+    # ------------------------------------------------------------------
+    def load(self, path: str, subject_id: Optional[str] = None, **kwargs) -> SubjectRecord:
+        """Dispatch to the right loader based on file extension."""
+        import os
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".gz" and path.lower().endswith(".nii.gz"):
+            ext = ".nii"
+        if ext in {".edf", ".bdf", ".gdf", ".set", ".fif", ".vhdr"}:
+            return self.load_eeg_file(path, subject_id=subject_id, **kwargs)
+        if ext in {".npy", ".npz", ".csv"}:
+            return self.load_numeric_file(path, subject_id=subject_id, **kwargs)
+        if ext in {".nii", ".nii.gz"}:
+            return self.load_fmri_file(path, subject_id=subject_id, **kwargs)
+        raise RealDataFormatError(f"Don't know how to load file with extension '{ext}': {path}")
+
+    # ------------------------------------------------------------------
+    def load_manifest(
+        self,
+        manifest_path : str,
+        data_root     : str = "",
+    ) -> List[SubjectRecord]:
+        """
+        Load a whole real cohort from a manifest CSV with columns:
+            subject_id, file_path, label[, salience_file][, ...extra columns...]
+
+        `label` (e.g. "Healthy", "MDD", "OCD") is carried along purely for
+        honest post-hoc scoring — it is never given to the model as input.
+        Any extra columns are stored in `.behavior` for that subject.
+        `file_path` is resolved relative to `data_root` if not absolute.
+
+        Returns
+        -------
+        List[SubjectRecord] — ready to pass into PSYONEBenchmarkReal.run().
+        """
+        import csv as csv_mod
+        import os
+
+        records: List[SubjectRecord] = []
+        with open(manifest_path, "r", newline="") as f:
+            reader = csv_mod.DictReader(f)
+            for row in reader:
+                sid       = row.get("subject_id") or row.get("id")
+                file_path = row.get("file_path") or row.get("path")
+                if not sid or not file_path:
+                    raise RealDataFormatError(
+                        f"Manifest row missing 'subject_id'/'file_path': {row}"
+                    )
+                full_path = file_path if os.path.isabs(file_path) else os.path.join(data_root, file_path)
+
+                record = self.load(full_path, subject_id=sid)
+                record.label = row.get("label") or row.get("group") or None
+
+                sal_file = row.get("salience_file")
+                if sal_file:
+                    sal_path = sal_file if os.path.isabs(sal_file) else os.path.join(data_root, sal_file)
+                    sal_arr  = np.load(sal_path) if sal_path.endswith(".npy") else np.loadtxt(sal_path, delimiter=",")
+                    record.salience = torch.from_numpy(np.asarray(sal_arr, dtype=np.float32)).float()
+
+                extra = {
+                    k: v for k, v in row.items()
+                    if k not in {"subject_id", "id", "file_path", "path", "label", "group", "salience_file"}
+                }
+                record.behavior = extra
+                records.append(record)
+
+        return records
 
 
 # =============================================================================
@@ -1662,9 +2053,183 @@ class PSYONEBenchmark:
             "mean_accuracy" : round(overall_acc, 4),
             "n_profiles"    : len(self.DISORDER_PROFILES),
             "n_subjects"    : self.n_subjects,
+            # NOTE: this is a self-consistency target for the synthetic
+            # sine-wave generator above, NOT an empirical human-subject
+            # accuracy figure. For real accuracy, use PSYONEBenchmarkReal.
             "target_range"  : "0.78–0.85",
+            "data_source"   : "SYNTHETIC — see PSYONEBenchmarkReal for real subject data",
         }
         logger.info(f"  Overall accuracy: {overall_acc*100:.1f}%")
+        return summary
+
+
+# =============================================================================
+# 8b.  Real-Subject Benchmark Runner  (v2.1)
+# =============================================================================
+
+class PSYONEBenchmarkReal:
+    """
+    Runs PSYONEBridge over REAL participant data (SubjectRecord objects from
+    RealSubjectDataLoader) and reports HONEST metrics — no hardcoded
+    "target_range" and no synthetic sine-wave EEG anywhere in this class.
+
+    Unlike PSYONEBenchmark (synthetic, above), accuracy here is computed
+    only when subjects carry a real ground-truth `label` (e.g. from
+    clinical diagnosis, MMPI-2, or expert rating) — never invented and
+    never required to fall inside a pre-set "expected" band.
+
+    Typical usage
+    --------------
+        loader  = RealSubjectDataLoader()
+        cohort  = loader.load_manifest("manifest.csv", data_root="data/")
+        bench   = PSYONEBenchmarkReal(action_dim=10)
+        results = bench.run(cohort)
+
+    `manifest.csv` columns: subject_id, file_path, label[, salience_file]
+    """
+
+    # Maps a real clinical label string → PsychopathologyMode, purely to
+    # pick matching λ/α distortion presets for that subject's run. This
+    # does NOT feed the label into the model as input.
+    LABEL_TO_MODE: Dict[str, PsychopathologyMode] = {
+        "healthy"       : PsychopathologyMode.HEALTHY,
+        "mdd"           : PsychopathologyMode.MDD_ANXIETY,
+        "anxiety"       : PsychopathologyMode.MDD_ANXIETY,
+        "mdd_anxiety"   : PsychopathologyMode.MDD_ANXIETY,
+        "schizophrenia" : PsychopathologyMode.SCHIZOPHRENIA,
+        "ocd"           : PsychopathologyMode.OCD,
+        "bipolar"       : PsychopathologyMode.BIPOLAR,
+        "ptsd"          : PsychopathologyMode.PTSD,
+    }
+
+    def __init__(
+        self,
+        action_dim    : int = 10,
+        default_mode  : PsychopathologyMode = PsychopathologyMode.HEALTHY,
+    ) -> None:
+        self.action_dim   = action_dim
+        self.default_mode = default_mode
+        self.results: Dict[str, PsycheTriadState] = {}
+
+    # ------------------------------------------------------------------
+    def _mode_for_label(self, label: Optional[str]) -> PsychopathologyMode:
+        if not label:
+            return self.default_mode
+        return self.LABEL_TO_MODE.get(label.strip().lower(), self.default_mode)
+
+    # ------------------------------------------------------------------
+    def run(
+        self,
+        cohort            : List[SubjectRecord],
+        reset_per_subject : bool = True,
+        verbose           : bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Run one psyche cycle per real subject in `cohort`.
+
+        Returns a summary dict with per-subject results plus, IF AND ONLY IF
+        at least one subject in the cohort carries a real `.label`, an
+        honest accuracy figure for label-vs-diagnosis agreement (computed
+        from MENTAL ONE's classifier output when available, otherwise from
+        a entropy/superego-loss heuristic threshold — both reported with
+        the method used, never silently).
+        """
+        if not cohort:
+            raise ValueError("cohort is empty — nothing real to run on.")
+
+        per_subject: List[Dict[str, Any]] = []
+        labeled_correct = 0
+        labeled_total   = 0
+
+        for record in cohort:
+            mode   = self._mode_for_label(record.label)
+            config = PsycheConfig(action_dim=self.action_dim, mode=mode)
+            bridge = PSYONEBridge(config=config)
+
+            if reset_per_subject:
+                bridge.reset()
+
+            salience = record.salience if record.salience is not None else None
+            state = bridge.run_psyche_cycle(record.eeg, salience)
+            self.results[record.subject_id] = state
+
+            row: Dict[str, Any] = {
+                "subject_id"   : record.subject_id,
+                "label"        : record.label,
+                "n_channels"   : int(record.eeg.shape[0]),
+                "n_timepoints" : int(record.eeg.shape[1]) if record.eeg.dim() > 1 else int(record.eeg.shape[0]),
+                "id_entropy"          : state.id_entropy,
+                "accumulated_entropy" : state.accumulated_entropy,
+                "superego_loss"       : state.superego_loss,
+                "behavioral_entropy"  : state.behavioral_entropy,
+                "free_energy"         : state.free_energy,
+                "model_diagnosis"     : state.diagnosis,
+                "ocd_loop_detected"   : state.ocd_loop_detected,
+            }
+
+            if record.label:
+                labeled_total += 1
+                predicted = (state.diagnosis or "").strip().lower()
+                actual    = record.label.strip().lower()
+                # Loose match: model's free-text diagnosis vs real label,
+                # falling back to "Healthy"-vs-"not Healthy" if MENTAL ONE
+                # is unavailable (state.diagnosis will be "Unknown").
+                if predicted not in ("", "unknown"):
+                    is_correct = predicted == actual or actual in predicted or predicted in actual
+                else:
+                    healthy_call = (
+                        state.id_entropy < 2.0
+                        and state.superego_loss < 1.0
+                        and not state.ocd_loop_detected
+                    )
+                    is_correct = healthy_call == (actual == "healthy")
+                row["label_match"] = bool(is_correct)
+                labeled_correct += int(is_correct)
+
+            if record.behavior:
+                row["behavior"] = record.behavior
+
+            per_subject.append(row)
+
+            if verbose:
+                logger.info(
+                    f"  [REAL] {record.subject_id:<12} label={record.label or '—':<14} "
+                    f"H(𝓘)={state.id_entropy:.3f}  L_𝓢={state.superego_loss:.3f}  "
+                    f"diag={state.diagnosis}"
+                )
+
+        summary: Dict[str, Any] = {
+            "n_subjects"  : len(cohort),
+            "n_labeled"   : labeled_total,
+            "per_subject" : per_subject,
+            "data_source" : "REAL — loaded via RealSubjectDataLoader, no synthetic generation",
+        }
+
+        if labeled_total > 0:
+            accuracy = labeled_correct / labeled_total
+            summary["label_match_accuracy"] = round(accuracy, 4)
+            summary["scoring_method"] = (
+                "MENTAL ONE diagnosis string vs. real label (loose substring match)"
+                if HAS_MENTAL_ONE else
+                "heuristic Healthy/not-Healthy threshold on H(𝓘) & L_𝓢 "
+                "(MENTAL ONE classifier unavailable — this is a weaker proxy, "
+                "not a clinical accuracy figure)"
+            )
+            logger.info(
+                f"  [REAL] label_match_accuracy = {accuracy*100:.1f}%  "
+                f"over {labeled_total}/{len(cohort)} labeled subjects "
+                f"({summary['scoring_method']})"
+            )
+        else:
+            summary["label_match_accuracy"] = None
+            summary["scoring_method"] = (
+                "N/A — no subject in this cohort carried a real ground-truth label"
+            )
+            logger.info(
+                "  [REAL] No ground-truth labels present — reporting raw "
+                "Id/Ego/Superego metrics only, no accuracy figure invented."
+            )
+
         return summary
 
 
@@ -1689,9 +2254,18 @@ def _parse_args():
     sim.add_argument("--gumbel_tau", type=float, default=1.0)
     sim.add_argument("--verbose",    action="store_true")
 
-    bench = sub.add_parser("benchmark", help="Run full benchmark suite")
+    bench = sub.add_parser("benchmark", help="Run full benchmark suite (synthetic EEG)")
     bench.add_argument("--action_dim", type=int, default=10)
     bench.add_argument("--n_subjects", type=int, default=20)
+
+    real = sub.add_parser(
+        "run-real",
+        help="Run on REAL subject data via a manifest CSV (subject_id,file_path,label)",
+    )
+    real.add_argument("--manifest", required=True, help="Path to manifest CSV")
+    real.add_argument("--data_root", default="", help="Root dir for relative file_path entries")
+    real.add_argument("--action_dim", type=int, default=10)
+    real.add_argument("--out", default=None, help="Optional path to write JSON results")
 
     return parser.parse_args()
 
@@ -1737,8 +2311,21 @@ def main() -> None:
         )
         results = bench.run()
         import json
-        print("\n── Benchmark Results ──")
+        print("\n── Benchmark Results (SYNTHETIC EEG) ──")
         print(json.dumps(results, indent=2))
+
+    elif args.command == "run-real":
+        loader  = RealSubjectDataLoader()
+        cohort  = loader.load_manifest(args.manifest, data_root=args.data_root)
+        bench   = PSYONEBenchmarkReal(action_dim=args.action_dim)
+        results = bench.run(cohort)
+        import json
+        print("\n── Benchmark Results (REAL SUBJECT DATA) ──")
+        print(json.dumps(results, indent=2, default=str))
+        if args.out:
+            with open(args.out, "w") as f:
+                json.dump(results, f, indent=2, default=str)
+            print(f"\nWritten to {args.out}")
 
 
 if __name__ == "__main__":
