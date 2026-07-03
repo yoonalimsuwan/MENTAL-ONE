@@ -15,11 +15,14 @@
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17615245-blue)](https://doi.org/10.5281/zenodo.17615245)
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20554000-blue)](https://doi.org/10.5281/zenodo.20554000)
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21120913-blue)](https://doi.org/10.5281/zenodo.21120913)
-[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20623622-blue)](https://doi.org/10.5281/zenodo.20623622)
-[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20837592-blue)](https://doi.org/10.5281/zenodo.20837592)
-[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21064288-blue)](https://doi.org/10.5281/zenodo.21064288)
-[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20755892-blue)](https://doi.org/10.5281/zenodo.20755892)
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20730429-blue)](https://doi.org/10.5281/zenodo.20730429)
+
+[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21159402-blue)](https://doi.org/10.5281/zenodo.21159402)
+[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21159473-blue)](https://doi.org/10.5281/zenodo.21159473)
+[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21120913-blue)](https://doi.org/10.5281/zenodo.21120913)
+[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20837592-blue)](https://doi.org/10.5281/zenodo.20837592)
+[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21131590-blue)](https://doi.org/10.5281/zenodo.21131590)
+[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21148045-blue)](https://doi.org/10.5281/zenodo.21148045)
 
 
 **MENTAL ONE** is an end‑to‑end differentiable engine for psychiatric and neurological diagnosis, trajectory prediction, and treatment design. It unifies **Semantic State Contraction (SSC)**, **Self‑Organised Criticality (SOC)** with a learnable kernel, **Renormalisation Group (RG)** filtering, **Itō processes**, and **control‑theoretic interventions** into a single, vendor‑neutral PyTorch workflow.
