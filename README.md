@@ -210,7 +210,7 @@ If you use MENTAL ONE in your research, please cite:
 
 ```bibtex
 @software{limsuwan2026mental,
-  author = {Yoon A Limsuwan},
+  author = {PAI , Yoon A Limsuwan},
   title = {MENTAL ONE: Full Differentiable Psychiatric \& Neurological Engine},
   year = {2026},
   url = {https://github.com/YoonALimsuwan/MENTAL-ONE},
