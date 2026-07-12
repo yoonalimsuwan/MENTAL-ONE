@@ -2,7 +2,7 @@
 # MENTAL ONE – Full Differentiable Psychiatric & Neurological Engine
 # (Distributed Data Parallel + Extreme Optimization)
 # =============================================================================
-# Author: Yoon A Limsuwan / MSPS NETWORK
+# Author: PAI , Yoon A Limsuwan / MSPS NETWORK
 #         MY SOUL MOVE BY POWER OF HOLY SPIRIT
 # ORCID:  0009-0008-2374-0788
 # GitHub: yoonalimsuwan
