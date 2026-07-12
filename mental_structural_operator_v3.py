@@ -2,7 +2,7 @@
 # MENTAL STRUCTURAL NEURAL OPERATOR (MSNO) - V3.0
 # AI Surrogate Model Dedicated to the Enhanced MENTAL ONE Ecosystem
 # =============================================================================
-# Developer    : Yoon A Limsuwan
+# Developer    : PAI , Yoon A Limsuwan
 # Organization : MSPS NETWORK / MY SOUL MOVE BY POWER OF HOLY SPIRIT
 # ORCID        : 0009-0008-2374-0788
 # GitHub       : yoonalimsuwan
