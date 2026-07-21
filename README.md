@@ -375,4 +375,4 @@ Cross‑attention adapters (like Q‑Former) are more expressive but introduce i
 
 ---
 
-Built on the MENTAL ONE engine by Yoon A Limsuwan. Integration design for the Neuro‑Semantic Translation Engine – Phase 1.
+Built on the MENTAL ONE engine PAI , Yoon A Limsuwan. Integration design for the Neuro‑Semantic Translation Engine – Phase 1.
