@@ -376,3 +376,42 @@ Cross‑attention adapters (like Q‑Former) are more expressive but introduce i
 ---
 
 Built on the MENTAL ONE engine PAI , Yoon A Limsuwan. Integration design for the Neuro‑Semantic Translation Engine – Phase 1.
+
+# Advanced Remote Neural Monitoring (RNM) via Deterministic Biophysical Modeling
+
+## Overview
+This repository contains the computational framework and advanced mathematical models for next-generation **Remote Neural Monitoring (RNM)**. By transitioning from traditional probabilistic approximations to a strictly deterministic universe model, this project solves the complex biophysical inverse problem: accurately tracing and decoding internal neural states from non-invasive external signal captures.
+
+Built upon the proprietary **Structural Calculus** framework, this project integrates high-performance 3D phase-field, fluid dynamics, and crystalline solvers to map the precise propagation of electromagnetic neural signals through complex biological interfaces.
+
+## Core Modules & Architecture
+
+The RNM digital twin architecture is powered by four foundational solvers, each addressing a specific layer of neural biophysics:
+
+*   **`langevin_deterministic` (Langevin Dynamics):** 
+    Re-engineered to operate completely deterministically, this module isolates true neural electrical impulses. By eliminating the assumption of randomness in systemic thermal noise and environmental fluctuations, it calculates exact signal trajectories.
+*   **`ch3d_solver` (Cahn-Hilliard 3D):** 
+    Simulates phase separation and interfacial dynamics across various tissue densities in the brain (e.g., cerebrospinal fluid, grey/white matter). This module is critical for precisely calculating the refraction, reflection, and phase shifts of electromagnetic waves as they transition across biological boundaries.
+*   **`thinfilm_3d` (ThinFilm 3D):** 
+    Models the surface dynamics of the cerebral cortex and lipid bilayers. It maps the highly detailed 3D spatiotemporal distribution of action potentials and ionic charge propagation along axonal membranes.
+*   **`pfc_3d` (Phase-Field Crystal 3D):** 
+    Reconstructs the atomic-density-level crystalline structures within neurons, specifically targeting microtubule networks. This module provides a foundational evaluation of neural biophysics, linking macroscopic signal emissions to sub-cellular, deterministic physical states.
+
+## Mathematical Foundation
+The entire computational pipeline is governed by **Structural Calculus**, an original, proprietary mathematical framework. Unlike conventional statistical physics, this framework is designed to provide absolute deterministic solutions to systems previously considered stochastic, ensuring unprecedented precision and high recall in evaluating sub-quantum variables and complex biological systems.
+
+## Key Applications
+*   **Non-Invasive Neural Telemetry:** High-fidelity reading and decoding of brain wave activity without internal hardware.
+*   **Digital Twin Construction:** Generating highly accurate, deterministic 3D models of the human nervous system.
+*   **Advanced BCI (Brain-Computer Interfaces):** Optimizing signal-to-noise ratios for seamless external hardware integration.
+
+## Getting Started
+*(Instructions for installation, dependencies, and running the simulation scripts will be added here. Recommended hardware: HPC clusters or advanced GPU setups for 3D solver stability.)*
+
+## Citation & Academic Impact
+When using this framework or its underlying mathematical theories, please cite the corresponding manuscripts available on Zenodo/ORCID. 
+
+## Author
+** PAI AND Yoon A (Meimei) / Joanna Yoon A Catherine Limsuwan** (Yoon A Limsuwan / Yoon A Eiamsuwan)  
+*Independent Researcher & Inventor of Structural Calculus*  
+ Studies
