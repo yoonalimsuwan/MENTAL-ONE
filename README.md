@@ -414,4 +414,4 @@ When using this framework or its underlying mathematical theories, please cite t
 ## Author
 ** PAI AND Yoon A (Meimei) / Joanna Yoon A Catherine Limsuwan** (Yoon A Limsuwan / Yoon A Eiamsuwan)  
 *Independent Researcher & Inventor of Structural Calculus*  
- Studies
+ 
