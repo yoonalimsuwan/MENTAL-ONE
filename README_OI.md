@@ -656,7 +656,7 @@ If this project is used in academic research, cite the repository according to t
   author  = {OI Research Project : MSPS NETWORK},
   year    = {2026},
   version = {0.1.0},
-  url     = {https://github.com/yoonalimsuwan/mental_one}
+  url     = {https://github.com/yoonalimsuwan/mental-one}
 }
 ```
 
