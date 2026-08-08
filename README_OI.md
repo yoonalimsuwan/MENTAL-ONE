@@ -499,83 +499,10 @@ Raw experimental data should be preserved separately from processed datasets.
 
 ---
 
-# 12. Proposed Repository Structure
-
-```text
-organoid-intelligence/
-│
-├── README.md
-├── LICENSE
-├── CITATION.cff
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-├── CODE_OF_CONDUCT.md
-│
-├── docs/
-│   ├── architecture.md
-│   ├── mathematical-model.md
-│   ├── ethics.md
-│   ├── experiments.md
-│   └── benchmarks.md
-│
-├── src/
-│   └── oi/
-│       ├── __init__.py
-│       ├── core/
-│       ├── neural/
-│       ├── plasticity/
-│       ├── interface/
-│       ├── memory/
-│       ├── learning/
-│       ├── environment/
-│       └── hybrid_ai/
-│
-├── models/
-│   ├── neural_state/
-│   ├── plasticity/
-│   └── hybrid/
-│
-├── experiments/
-│   ├── 00_baseline/
-│   ├── 01_learning/
-│   ├── 02_closed_loop/
-│   ├── 03_multitask/
-│   ├── 04_hybrid_ai/
-│   └── 05_distributed_oi/
-│
-├── benchmarks/
-│   ├── learning/
-│   ├── generalization/
-│   ├── continual_learning/
-│   ├── robustness/
-│   └── energy/
-│
-├── data/
-│   ├── raw/
-│   ├── processed/
-│   └── metadata/
-│
-├── notebooks/
-│   ├── 01_neural_activity.ipynb
-│   ├── 02_learning.ipynb
-│   ├── 03_closed_loop.ipynb
-│   ├── 04_hybrid_ai.ipynb
-│   └── 05_benchmark.ipynb
-│
-├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── benchmark/
-│
-└── results/
-    ├── figures/
-    ├── tables/
-    └── reports/
-```
 
 ---
 
-# 13. Roadmap
+# 14. Roadmap
 
 ## Phase I — Computational Modeling
 
@@ -626,7 +553,7 @@ organoid-intelligence/
 
 ---
 
-# 14. Ethics and Governance
+# 13. Ethics and Governance
 
 OI research requires stronger ethical oversight as biological complexity increases.
 
@@ -648,7 +575,7 @@ A **precautionary framework** should therefore accompany technical development.
 
 ---
 
-# 15. Scientific Limitations
+# 16. Scientific Limitations
 
 Several major limitations remain unresolved.
 
@@ -670,7 +597,7 @@ and
 
 ---
 
-# 16. Research Philosophy
+# 18. Research Philosophy
 
 The project is based on the following principle:
 
@@ -686,7 +613,7 @@ The ultimate objective is to understand the computational principles shared by b
 
 ---
 
-# 17. Long-Term Vision
+# 19. Long-Term Vision
 
 The long-term vision is a scalable **Biological-Digital Intelligence Platform** combining:
 
@@ -719,7 +646,7 @@ This remains a long-term research direction rather than an established technolog
 
 ---
 
-# 18. Citation
+# 20. Citation
 
 If this project is used in academic research, cite the repository according to the metadata provided in `CITATION.cff`.
 
@@ -737,7 +664,7 @@ Replace the repository URL and author metadata with the actual project informati
 
 ---
 
-# 19. Project Status
+# 21. Project Status
 
 **Current Status:** Conceptual / Research Framework
 
