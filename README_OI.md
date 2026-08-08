@@ -653,10 +653,10 @@ If this project is used in academic research, cite the repository according to t
 ```bibtex
 @software{organoid_intelligence,
   title   = {Organoid Intelligence: A Research Framework for Biological-Digital Intelligence},
-  author  = {OI Research Project},
+  author  = {OI Research Project : MSPS NETWORK},
   year    = {2026},
   version = {0.1.0},
-  url     = {https://github.com/example/organoid-intelligence}
+  url     = {https://github.com/yoonalimsuwan/mental_one}
 }
 ```
 
