@@ -502,7 +502,7 @@ Raw experimental data should be preserved separately from processed datasets.
 
 ---
 
-# 14. Roadmap
+# 12. Roadmap
 
 ## Phase I — Computational Modeling
 
@@ -575,7 +575,7 @@ A **precautionary framework** should therefore accompany technical development.
 
 ---
 
-# 16. Scientific Limitations
+# 14. Scientific Limitations
 
 Several major limitations remain unresolved.
 
@@ -597,7 +597,7 @@ and
 
 ---
 
-# 18. Research Philosophy
+# 15. Research Philosophy
 
 The project is based on the following principle:
 
@@ -613,7 +613,7 @@ The ultimate objective is to understand the computational principles shared by b
 
 ---
 
-# 19. Long-Term Vision
+# 16. Long-Term Vision
 
 The long-term vision is a scalable **Biological-Digital Intelligence Platform** combining:
 
@@ -646,7 +646,7 @@ This remains a long-term research direction rather than an established technolog
 
 ---
 
-# 20. Citation
+# 17. Citation
 
 If this project is used in academic research, cite the repository according to the metadata provided in `CITATION.cff`.
 
@@ -664,7 +664,7 @@ Replace the repository URL and author metadata with the actual project informati
 
 ---
 
-# 21. Project Status
+# 18. Project Status
 
 **Current Status:** Conceptual / Research Framework
 
