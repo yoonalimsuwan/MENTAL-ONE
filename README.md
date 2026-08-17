@@ -433,28 +433,6 @@ This repository houses a unified ecosystem of differentiable neural frameworks d
  * FullyDifferentiableMindInterpreter (multi_llm_provider_adapter_mental_health_concentration_level.py)
    * Encapsulates 5 core theoretical psychological and spiritual frameworks: Cetasika 52, Nivarana 5 (Hindrances), Yoniso Manasikara 10, Samadhi Stage Classifier (3 Levels), and Bojjhanga 7.
    * Includes a unified multi-provider adapter supporting embedding projections across major LLM ecosystems (Gemini, GPT, Claude, DeepSeek, Kimi, Qwen, GLM, Copilot, Grok).
-     
-📦 Installation
-Ensure you have PyTorch installed. Clone the repository and install dependencies:
-git clone https://github.com/your-username/sesi-psychopathology-engine.git
-cd sesi-psychopathology-engine
-pip install torch
-
-💡 Quick Start Example
-Running the FullyDifferentiableMindInterpreter with Google Gemini provider embeddings:
-import torch
-from multi_llm_provider_adapter_mental_health_concentration_level import FullyDifferentiableMindInterpreter
-
-# Initialize interpreter model
-interpreter = FullyDifferentiableMindInterpreter(input_dim=768)
-interpreter.eval()
-
-# Simulate Google Gemini hidden states (Batch size = 2, Seq len = 32, Dim = 3072)
-gemini_input = torch.randn(2, 32, 3072)
-gemini_mask = torch.ones(2, 32)
-
-# Forward pass
-outputs = interpreter(gemini_input, provider="gemini", attention_mask=gemini_mask)
 
 
 ## Citation & Academic Impact
