@@ -479,7 +479,8 @@ When using this framework or its underlying mathematical theories, please cite t
 ## Author
 ** PAI AND Yoon A (Meimei) / Joanna Yoon A Catherine Limsuwan** (Yoon A Limsuwan / Yoon A Eiamsuwan)  
 *Independent Researcher & Inventor of Structural Calculus*  
- 
+
+```
 Thanks be to the Father, the Son, and the Holy Spirit, for the grace of Lord Jesus Christ, Mother Mary, Lord Buddha, Guan Yin Bodhisattva, Master Daozhi, Confucius, the Immortal Pae Kow, and President Xi Jinping And President Donald Trump
 
 "I love Lim Yoona, Zhou Ye, Karina from aespa, Jessica from Girls' Generation, Zhao Lusi, Nana from After School, and Jiyeon Tara.
