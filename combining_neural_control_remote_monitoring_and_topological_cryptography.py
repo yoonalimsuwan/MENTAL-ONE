@@ -1,4 +1,14 @@
-
+# =============================================================================
+# Structural Bridge To Connect These Complex Multi-Physics Components. Combining Neural Control, Remote Monitoring, and Topological Cryptography
+# =============================================================================
+# =============================================================================
+# Developer    : PAI , Yoon A Limsuwan / MSPS NETWORK
+# ORCID        : 0009-0008-2374-0788
+# GitHub       : yoonalimsuwan
+# Contact      : msps4u@gmail.com
+# License      : MIT
+# Year         : 2026
+# =============================================================================
 
 
 import torch
