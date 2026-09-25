@@ -1,5 +1,11 @@
-
-
+# =============================================================================
+# Remote Neural Monitoring Engine - NATIVE FULL DIFFERENTIABLE
+# =============================================================================
+# Developer    : PAI , Yoon A Limsuwan / MSPS NETWORK
+# AI Assist    : Developed with the assistance of Gemini
+# License      : MIT
+# Year         : 2026
+# =============================================================================
 
 import torch
 import torch.nn as nn
