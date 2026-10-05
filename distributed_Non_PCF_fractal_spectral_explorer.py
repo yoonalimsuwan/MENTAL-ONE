@@ -4,9 +4,18 @@ Integrates:
   1. DDP-Ready & AMP-Safe mechanics from the consolidated library.
   2. Higher-order Laplacian spectral gap exploration for non-p.c.f. fractals.
 
-Framework    : Structural Calculus (Deterministic Topological Framework)
-License      : MIT
-Version      : 3.0.0  (native multi-GPU / DDP / AMP-safe / differentiable)
+# Developer    : PAI, Yoon A Limsuwan / MSPS NETWORK
+#                MY SOUL MOVE BY POWER OF HOLY SPIRIT
+# ORCID        : 0009-0008-2374-0788
+# GitHub       : https://github.com/yoonalimsuwan
+# Contact      : msps4u@gmail.com
+# Framework    : Structural Calculus (Deterministic Topological Framework)
+# License      : MIT
+# Year         : 2026
+# Version      : 3.0.0 (Native Full Differentiable / AMP-Safe / DDP-Ready)
+# =============================================================================
+
+
 """
 
 from __future__ import annotations
