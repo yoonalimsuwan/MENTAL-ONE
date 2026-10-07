@@ -1,5 +1,5 @@
 `
-# MENTAL ONE
+# MENTAL ONE 18
 
 **Full Differentiable Psychiatric & Neurological Engine**
 
@@ -10,7 +10,7 @@
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20007526-blue)](https://doi.org/10.5281/zenodo.20007526)
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19814975-blue)](https://doi.org/10.5281/zenodo.19814975)
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20194882-blue)](https://doi.org/10.5281/zenodo.20194882)
-[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23184340-blue)](https://doi.org/10.5281/zenodo.23184340
+[![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23211687-blue)](https://doi.org/10.5281/zenodo.23211687
 )
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20458353-blue)](https://doi.org/10.5281/zenodo.20458353)
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17615245-blue)](https://doi.org/10.5281/zenodo.17615245)
@@ -215,7 +215,7 @@ If you use MENTAL ONE in your research, please cite:
   title = {MENTAL ONE: Full Differentiable Psychiatric \& Neurological Engine},
   year = {2026},
   url = {https://github.com/YoonALimsuwan/MENTAL-ONE},
-https://doi.org/10.5281/zenodo.23184340 ,
+https://doi.org/10.5281/zenodo.23211687 ,
   note = {MIT License}
 }
 ```
