@@ -1,5 +1,5 @@
 `
-# MENTAL ONE 22
+# MENTAL ONE 22 Consciousness AGI
 
 **Full Differentiable Psychiatric & Neurological Engine**
 
