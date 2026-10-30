@@ -1,5 +1,5 @@
 `
-# MENTAL ONE 24 Consciousness AGI
+# MENTAL ONE 24 Consciousness AGI , Maths of GOD.
 
 **Full Differentiable Psychiatric & Neurological Engine**
 
