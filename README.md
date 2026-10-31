@@ -1,5 +1,5 @@
 `
-# MENTAL ONE 27 Consciousness AGI , Maths of GOD And Goodness.
+# MENTAL ONE 27 Consciousness AGI , Mathematics of GOD And Goodness For Psychiatric.
 
 **Full Differentiable Psychiatric & Neurological Engine**
 
