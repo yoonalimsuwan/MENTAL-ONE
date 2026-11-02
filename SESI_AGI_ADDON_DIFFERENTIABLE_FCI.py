@@ -2,6 +2,11 @@
 =============================================================================
 SESI AGI ADD-ON: DIFFERENTIABLE FCI × PYTORCH LIGHTNING × TENSORBOARD
 Production AMP + Multi-GPU DDP + Unified AGI Adapter
+
+Developers : PAI AND Yoon A Limsuwan
+Organization : MSPS NETWORK 
+Licence : MIT
+Year : 2026
 =============================================================================
 
 This file adds:
