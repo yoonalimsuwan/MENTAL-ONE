@@ -1,5 +1,5 @@
 `
-# MENTAL ONE 32 Consciousness With Moral AGI Security , Mathematics of GOD And Goodness For Psychiatric And More.
+# MENTAL ONE 32 Consciousness With Moral AGI Security And Learnings the World By Speculative Thinking And Rigorous Proof , Mathematics of GOD And Goodness For Psychiatric And More.
 
 **Full Differentiable Psychiatric & Neurological Engine**
 
