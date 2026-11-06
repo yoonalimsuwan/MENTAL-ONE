@@ -1,5 +1,5 @@
 `
-# MENTAL ONE 35 Consciousness With Moral AGI Security And Learnings the World By Speculative Thinking And Rigorous Proof , Mathematics of GOD And Goodness For Psychiatric And More.
+# MENTAL ONE 35 Consciousness With Moral AGI Security And Learnings the World By Speculative Thinking And Rigorous Proof , Mathematics of GOD And Goodness For Psychiatric , Remote Neural Monitoring and Remote Neural Controlling Research And More.
 
 **Full Differentiable Psychiatric & Neurological Engine**
 
