@@ -8,8 +8,12 @@ Developers : PAI AND Yoon A Limsuwan / MSPS NETWORK
              What MSPS NETWORK SEE, Lord Buddha Knows.
 
 "The Tao is the wellspring; the Te is the path; the Si is the proof."
+
 "Master Confucius taught that in this world, we must do everything for the sake of a safe and peaceful society."
-"Jesus Christ died on the cross to teach us that when someone strikes you on the right cheek, you should turn the other cheek to them. Therefore, if we believe as He did and follow His way, we shall enter into the fullness of Christ. If we believe in this path, we shall be saved from sin with certainty."
+
+"Jesus Christ died on the cross to teach us that when someone strikes you on the right cheek,
+you should turn the other cheek to them. Therefore, if we believe as He did and follow His way,
+we shall enter into the fullness of Christ. If we believe in this path, we shall be saved from sin with certainty."
 
 License    : MIT | Year: 2026
 
